@@ -1,0 +1,10 @@
+{
+  "target_year": "1405",
+  "active_analysis_year": "1404",
+  "status": "fallback_to_1404_until_1405_booklet_release",
+  "active_source_label": "دفترچه انتخاب رشته ۱۴۰۴",
+  "future_source_label": "دفترچه انتخاب رشته ۱۴۰۵",
+  "update_method": "When the official 1405 selection booklet is released, add/update the 1405 source files and change active_analysis_year to 1405. Student-entered report data is preserved; only selection-guide reference data changes.",
+  "no_code_change_required": true,
+  "priority": "official_sanjesh_first"
+}
