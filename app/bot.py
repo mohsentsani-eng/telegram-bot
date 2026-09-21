@@ -1182,9 +1182,24 @@ QUICK_BASE_QUESTIONS = [
     ("goal", "🚀 مهم‌ترین هدفت برای امسال چیست؟", ["افزایش معدل","بهبود درصد آزمون‌ها","موفقیت در کنکور","انتخاب رشته مناسب","منظم شدن در مطالعه","کسب نتیجه بهتر"])
 ]
 
+def _student_field(student, key, default=""):
+    """Read a field from either sqlite3.Row or a normal dict."""
+    if student is None:
+        return default
+    try:
+        return student[key]
+    except (KeyError, IndexError, TypeError):
+        try:
+            return student.get(key, default)
+        except AttributeError:
+            return default
+
+
 def quick_questions_for(student):
-    grade=student.get("grade","") if student else ""
-    track=student.get("track","") if student else ""
+    # db.get_student_by_tg returns sqlite3.Row in production; Row has no .get().
+    # Normalize access here so the quick-assessment entry point cannot crash.
+    grade=_student_field(student, "grade", "")
+    track=_student_field(student, "track", "")
     subjects=grade_subjects(grade,track)
     return [
         ("weak_subject", "📚 بیشتر در کدام درس احساس ضعف می‌کنی؟", subjects+["درس خاصی ندارم"]),
@@ -1264,7 +1279,14 @@ async def quick_assessment_answer(message: Message, state: FSMContext):
     data=await state.get_data()
     answers=dict(data.get("quick_answers",{}))
     step=int(data.get("quick_step",0))
+    student=db.get_student_by_tg(message.from_user.id)
+    if not student:
+        await state.clear()
+        return await begin_registration(message,state)
     questions=data.get("quick_questions") or quick_questions_for(student)
+    if not questions:
+        await state.clear()
+        return await message.answer("⚠️ سؤال‌های ارزیابی سریع در دسترس نیستند. لطفاً دوباره از منوی اصلی شروع کنید.",reply_markup=main_menu())
     if step>=len(questions):
         await state.clear()
         return await message.answer("این ارزیابی قبلاً کامل شده است.",reply_markup=main_menu())
@@ -1285,11 +1307,6 @@ async def quick_assessment_answer(message: Message, state: FSMContext):
             f"سؤال {next_step+1} از {len(questions)}\n{next_q}",
             reply_markup=quick_keyboard(next_opts)
         )
-
-    student=db.get_student_by_tg(message.from_user.id)
-    if not student:
-        await state.clear()
-        return await begin_registration(message,state)
 
     # Build a complete local report first; AI can enrich it, but it can never erase the answers.
     base_report=local_quick_analysis(answers)
