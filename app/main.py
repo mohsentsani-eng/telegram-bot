@@ -33,9 +33,9 @@ async def main():
 
     init_db()
 
-    host = os.getenv("ADMIN_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    host = os.getenv("ADMIN_HOST", "0.0.0.0").strip() or "0.0.0.0"
     try:
-        preferred_port = int(os.getenv("ADMIN_PORT", "8000"))
+        preferred_port = int(os.getenv("PORT", os.getenv("ADMIN_PORT", "8000")))
     except ValueError:
         preferred_port = 8000
 

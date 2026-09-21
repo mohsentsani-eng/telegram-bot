@@ -1,4 +1,5 @@
 import os, json, random, asyncio, datetime, time
+from zoneinfo import ZoneInfo
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -237,6 +238,56 @@ async def global_back(message:Message,state:FSMContext):
     # برای ثبت‌نام، روان‌شناختی و انتخاب رشته، بازگشت به منوی اصلی امن‌تر است.
     await state.clear()
     await message.answer("🏠 منوی اصلی ترنم همدلی", reply_markup=main_menu())
+
+# Main-menu actions must always be reachable even if the user is still inside
+# another FSM flow. This prevents a common Telegram UX bug: a menu button such as
+# «کوچینگ تحصیلی» or «برنامه‌ریزی تخصصی» being interpreted as an answer to the
+# previous question (for example, as a study subject).
+MAIN_ACTIONS = {
+    "🎯 ارزیابی سریع من", "📢 کانال ترنم همدلی",
+    "📊 ارزیابی تحصیلی", "🧠 ارزیابی روان‌شناختی",
+    "📚 مهارت‌های یادگیری", "📅 برنامه‌ریزی تخصصی",
+    "🚀 کوچینگ تحصیلی", "🧭 انتخاب رشته نهم",
+    "🎓 انتخاب رشته کنکور", "👨‍👩‍👧 مشاوره والدین",
+    "🤖 دستیار هوشمند", "👤 پرونده من",
+    "📞 درخواست مشاوره", "🔄 ثبت‌نام مجدد",
+}
+
+@dp.message(F.text.in_(MAIN_ACTIONS))
+async def global_main_action(message:Message,state:FSMContext):
+    # Existing dedicated handlers registered earlier (notably the channel button)
+    # get the first chance to handle their own action. This handler covers menu
+    # actions while an FSM is active, where previously the FSM swallowed them.
+    s=db.get_student_by_tg(message.from_user.id)
+    if message.text == "📢 کانال ترنم همدلی":
+        if await channel_ok(message.from_user.id):
+            return await message.answer("✅ شما عضو کانال ترنم همدلی هستید.\n\nاز محتوای آموزشی و خدمات ربات استفاده کنید.", reply_markup=main_menu())
+        return await channel_menu(message)
+    if message.text == "🔄 ثبت‌نام مجدد":
+        return await begin_registration(message,state,renew=True)
+    if not s:
+        return await begin_registration(message,state)
+    # A new top-level action intentionally abandons the previous FSM step.
+    await state.clear()
+    t=message.text
+    if t=="🎯 ارزیابی سریع من": return await quick_assessment_start(message,state)
+    if t=="🤖 دستیار هوشمند": return await ai_menu(message,state)
+    if t=="👤 پرونده من": return await show_profile(message)
+    if t=="📊 ارزیابی تحصیلی": return await academic_start(message,state)
+    if t=="🧠 ارزیابی روان‌شناختی": return await psych_start(message,state)
+    if t=="📚 مهارت‌های یادگیری": return await learning_start(message,state)
+    if t=="📅 برنامه‌ریزی تخصصی": return await planner_start(message,state)
+    if t=="🎓 انتخاب رشته کنکور": return await konkur_start(message,state)
+    if t=="🧭 انتخاب رشته نهم": return await ninth_start(message,state)
+    if t=="🚀 کوچینگ تحصیلی":
+        db.request_counseling(s["id"],"coaching","علاقه‌مند به کوچینگ")
+        return await message.answer("✅ درخواست کوچینگ در CRM ثبت شد.",reply_markup=main_menu())
+    if t=="👨‍👩‍👧 مشاوره والدین":
+        db.request_counseling(s["id"],"parents","درخواست مشاوره والدین")
+        return await message.answer("✅ درخواست مشاوره والدین ثبت شد.",reply_markup=main_menu())
+    if t=="📞 درخواست مشاوره":
+        db.request_counseling(s["id"],"general","درخواست عمومی")
+        return await message.answer("✅ درخواست شما ثبت شد.",reply_markup=main_menu())
 
 @dp.message(CommandStart())
 async def start(message:Message,state:FSMContext):
@@ -1388,21 +1439,37 @@ def _daily_state():
 
 def _save_daily_state(state):
     path=_daily_state_path()
-    with open(path,"w",encoding="utf-8") as f: json.dump(state,f,ensure_ascii=False,indent=2)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp=path+".tmp"
+    with open(tmp,"w",encoding="utf-8") as f: json.dump(state,f,ensure_ascii=False,indent=2)
+    os.replace(tmp,path)
 
-async def publish_daily_message_once():
-    now=datetime.datetime.now()
+def _daily_timezone():
+    name=os.getenv("DAILY_MESSAGE_TIMEZONE","Asia/Tehran").strip() or "Asia/Tehran"
+    try: return ZoneInfo(name)
+    except Exception:
+        print(f"[CHANNEL] invalid timezone {name!r}; falling back to UTC",flush=True)
+        return datetime.timezone.utc
+
+async def publish_daily_message_once(now=None):
+    tz=_daily_timezone()
+    now=now or datetime.datetime.now(tz)
     day=now.strftime("%Y-%m-%d")
     st=_daily_state()
     if st.get("last_date")==day: return False
+    if not DAILY_MESSAGES:
+        print("[CHANNEL] daily message bank is empty",flush=True)
+        return False
     idx=int(st.get("index",-1))+1
     msg=DAILY_MESSAGES[idx % len(DAILY_MESSAGES)]
     try:
         await bot.send_message(CHANNEL_ID,"🌱 <b>پیام امروز ترنم همدلی</b>\n\n"+msg)
         _save_daily_state({"last_date":day,"index":idx})
-        print(f"[CHANNEL] daily message published: {day}",flush=True)
+        print(f"[CHANNEL] daily message published: {day} (#{idx+1})",flush=True)
         return True
     except Exception as e:
+        # Do not mark the date as sent when Telegram rejects the message. The
+        # scheduler will retry automatically instead of silently losing the day.
         print(f"[CHANNEL] daily message failed: {type(e).__name__}: {e}",flush=True)
         return False
 
@@ -1410,18 +1477,46 @@ async def daily_channel_loop():
     try: hour=int(os.getenv("DAILY_MESSAGE_HOUR","9")); minute=int(os.getenv("DAILY_MESSAGE_MINUTE","0"))
     except ValueError: hour,minute=9,0
     hour=max(0,min(23,hour)); minute=max(0,min(59,minute))
+    tz=_daily_timezone()
+    print(f"[CHANNEL] daily scheduler active at {hour:02d}:{minute:02d} {getattr(tz,'key',tz)}",flush=True)
     while True:
-        now=datetime.datetime.now()
-        target=now.replace(hour=hour,minute=minute,second=0,microsecond=0)
-        if target<=now: target+=datetime.timedelta(days=1)
-        await asyncio.sleep(max(1,(target-now).total_seconds()))
-        await publish_daily_message_once()
+        try:
+            now=datetime.datetime.now(tz)
+            target=now.replace(hour=hour,minute=minute,second=0,microsecond=0)
+            # If the service was down at the scheduled time, publish as soon as
+            # it comes back online. If it is before the scheduled time, wait.
+            if now >= target:
+                await publish_daily_message_once(now)
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[CHANNEL] scheduler error: {type(e).__name__}: {e}",flush=True)
+            await asyncio.sleep(60)
 
 async def run_bot():
+    # Polling is deliberately self-healing: temporary Telegram/network errors
+    # should not take the service offline until Railway restarts the container.
     daily_task=asyncio.create_task(daily_channel_loop())
+    delay=5
     try:
-        await dp.start_polling(bot)
+        while True:
+            try:
+                await bot.delete_webhook(drop_pending_updates=False)
+                me=await bot.get_me()
+                print(f"[BOT] connected as @{me.username or me.id}",flush=True)
+                await dp.start_polling(bot, handle_signals=False)
+                delay=5
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print(f"[BOT] polling stopped: {type(e).__name__}: {e}",flush=True)
+                print(f"[BOT] retrying in {delay}s",flush=True)
+                await asyncio.sleep(delay)
+                delay=min(delay*2,60)
     finally:
         daily_task.cancel()
         try: await daily_task
         except asyncio.CancelledError: pass
+        try: await bot.session.close()
+        except Exception: pass
