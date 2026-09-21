@@ -82,6 +82,10 @@ class GeminiQuotaExhausted(RuntimeError):
     """Gemini API quota/rate-limit is exhausted; retrying every model is not useful."""
 
 
+class GeminiIncompleteResponse(RuntimeError):
+    """Gemini stopped because the configured output token limit was reached."""
+
+
 def _is_quota_error(exc: Exception) -> bool:
     msg = str(exc).upper()
     return "429" in msg or "RESOURCE_EXHAUSTED" in msg or "QUOTA_EXCEEDED" in msg
@@ -160,6 +164,20 @@ async def _one_request(client, model_name: str, full: str, max_tokens: int, use_
         ),
         timeout=float(os.getenv("GEMINI_REQUEST_TIMEOUT", "90")),
     )
+    # Do not silently send truncated answers to Telegram. Gemini reports
+    # MAX_TOKENS when the output limit is reached; the caller can retry with
+    # a larger budget instead of displaying an incomplete report.
+    try:
+        candidates = getattr(response, "candidates", None) or []
+        if candidates:
+            finish_reason = getattr(candidates[0], "finish_reason", None)
+            finish_text = str(finish_reason or "").upper()
+            if "MAX_TOKENS" in finish_text or "MAXTOKENS" in finish_text:
+                raise GeminiIncompleteResponse("Gemini response reached max_output_tokens")
+    except GeminiIncompleteResponse:
+        raise
+    except Exception:
+        pass
     text = getattr(response, "text", None)
     if not text:
         raise RuntimeError("Gemini returned an empty response")
@@ -187,6 +205,22 @@ async def ask(prompt: str, context: Optional[str] = None, max_tokens: int = 1800
                 except asyncio.TimeoutError as e:
                     last_error = e
                     print(f"[AI] timeout: {model_name} (attempt {attempt}/2)", flush=True)
+                except GeminiIncompleteResponse as e:
+                    last_error = e
+                    print(f"[AI] incomplete response from {model_name}; increasing output budget", flush=True)
+                    # The first request may simply have hit the output ceiling.
+                    # Retry the same model with a larger budget before falling back.
+                    if attempt == 1:
+                        retry_tokens = min(max(int(max_tokens * 2), 2800), 6000)
+                        try:
+                            text = await _one_request(client, model_name, full, retry_tokens, use_web_search)
+                            print(f"[AI] success after token-budget retry: {model_name}", flush=True)
+                            return text
+                        except GeminiIncompleteResponse as retry_error:
+                            last_error = retry_error
+                        except Exception as retry_error:
+                            last_error = retry_error
+                            print(f"[AI] token-budget retry error {model_name}: {type(retry_error).__name__}: {str(retry_error)[:240]}", flush=True)
                 except Exception as e:
                     last_error = e
                     msg = str(e).upper()
