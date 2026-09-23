@@ -199,7 +199,7 @@ def marketing(req: Request):
     <h2>عملکرد هر منبع</h2>
     <table>
       <tr><th>منبع</th><th>شروع</th><th>ثبت‌نام</th><th>ارزیابی سریع</th><th>عضویت کانال</th><th>درخواست مشاوره</th></tr>
-      {rows || '<tr><td colspan="6">هنوز داده‌ای ثبت نشده است.</td></tr>'}
+      {rows if rows else '<tr><td colspan="6">هنوز داده‌ای ثبت نشده است.</td></tr>'}
     </table>
 
     <p class="muted">
