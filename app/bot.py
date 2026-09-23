@@ -1,4 +1,5 @@
 import os, json, random, asyncio, datetime, time
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
@@ -15,6 +16,7 @@ TOKEN=os.getenv("BOT_TOKEN")
 CHANNEL_ID=os.getenv("REQUIRED_CHANNEL_ID","@tarnoomhamdeli").strip() or "@tarnoomhamdeli"
 CHANNEL_URL=os.getenv("REQUIRED_CHANNEL_URL","").strip() or "https://t.me/tarnoomhamdeli"
 CHANNEL_USERNAME="@tarnoomhamdeli"
+BOT_USERNAME=os.getenv("BOT_USERNAME","").strip().lstrip("@")
 
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN is not set. Put your bot token in .env")
@@ -56,7 +58,7 @@ def kb(rows):
 def main_menu():
     return kb([
         ["🎯 ارزیابی سریع من"],
-        ["📢 کانال ترنم همدلی"],
+        ["📢 کانال ترنم همدلی","📤 معرفی به دوست"],
         ["📊 ارزیابی تحصیلی","🧠 ارزیابی روان‌شناختی"],
         ["📚 مهارت‌های یادگیری","📅 برنامه‌ریزی تخصصی"],
         ["🚀 کوچینگ تحصیلی","🧭 انتخاب رشته نهم"],
@@ -145,6 +147,10 @@ async def channel_cta(message, intro=""):
     ]))
     return True
 
+@dp.message(F.text == "📤 معرفی به دوست")
+async def share_menu(message:Message):
+    return await share_invite(message)
+
 @dp.message(F.text == "📢 کانال ترنم همدلی")
 async def channel_menu(message:Message):
     if await channel_ok(message.from_user.id):
@@ -158,9 +164,39 @@ async def channel_menu(message:Message):
 async def check_channel(cq:CallbackQuery):
     await cq.answer()
     if await channel_ok(cq.from_user.id):
+        s=db.get_student_by_tg(cq.from_user.id)
+        db.track_referral_event(cq.from_user.id,"channel_join_verified",db.first_referral_source(cq.from_user.id),s["id"] if s else None)
         await cq.message.answer("✅ عضویت تأیید شد. حالا می‌توانید از خدمات آموزشی استفاده کنید.",reply_markup=main_menu())
     else:
         await cq.message.answer("هنوز عضویت تأیید نشد. بعد از عضویت دوباره بررسی کنید.")
+
+async def share_invite(message):
+    """Give users a Telegram share link with source attribution."""
+    global BOT_USERNAME
+    if not BOT_USERNAME:
+        try:
+            me=await bot.get_me()
+            BOT_USERNAME=(me.username or "").strip().lstrip("@")
+        except Exception:
+            BOT_USERNAME=""
+    if not BOT_USERNAME:
+        return await message.answer("لینک معرفی موقتاً در دسترس نیست؛ کمی بعد دوباره امتحان کنید.", reply_markup=main_menu())
+    link=f"https://t.me/{BOT_USERNAME}?start=share"
+    share_url="https://t.me/share/url?url="+quote(link,safe="")+"&text="+quote(
+        "🎯 ارزیابی سریع و رایگان ترنم همدلی\n"
+        "۶ سؤال کوتاه، یک تحلیل اولیه و چند پیشنهاد کاربردی برای مسیر تحصیلی.\n\n"
+        "برای شروع روی لینک زیر بزن:", safe=""
+    )
+    await message.answer(
+        "📤 <b>معرفی بات ترنم همدلی</b>\n\n"
+        "این لینک را برای دوستت بفرست تا ارزیابی سریع رایگان را انجام دهد. 🌱",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📤 ارسال برای دوست",url=share_url)],
+            [InlineKeyboardButton(text="🎯 شروع ارزیابی برای خودم",url=link)],
+            [InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]
+        ])
+    )
+
 
 async def begin_registration(message:Message,state:FSMContext, referral="", renew=False):
     await state.clear()
@@ -250,6 +286,7 @@ MAIN_ACTIONS = {
     "🚀 کوچینگ تحصیلی", "🧭 انتخاب رشته نهم",
     "🎓 انتخاب رشته کنکور", "👨‍👩‍👧 مشاوره والدین",
     "🤖 دستیار هوشمند", "👤 پرونده من",
+    "📤 معرفی به دوست",
     "📞 درخواست مشاوره", "🔄 ثبت‌نام مجدد",
 }
 
@@ -259,6 +296,8 @@ async def global_main_action(message:Message,state:FSMContext):
     # get the first chance to handle their own action. This handler covers menu
     # actions while an FSM is active, where previously the FSM swallowed them.
     s=db.get_student_by_tg(message.from_user.id)
+    if message.text == "📤 معرفی به دوست":
+        return await share_invite(message)
     if message.text == "📢 کانال ترنم همدلی":
         if await channel_ok(message.from_user.id):
             return await message.answer("✅ شما عضو کانال ترنم همدلی هستید.\n\nاز محتوای آموزشی و خدمات ربات استفاده کنید.", reply_markup=main_menu())
@@ -270,6 +309,7 @@ async def global_main_action(message:Message,state:FSMContext):
     # A new top-level action intentionally abandons the previous FSM step.
     await state.clear()
     t=message.text
+    if t=="📤 معرفی به دوست": return await share_invite(message)
     if t=="🎯 ارزیابی سریع من": return await quick_assessment_start(message,state)
     if t=="🤖 دستیار هوشمند": return await ai_menu(message,state)
     if t=="👤 پرونده من": return await show_profile(message)
@@ -281,19 +321,23 @@ async def global_main_action(message:Message,state:FSMContext):
     if t=="🧭 انتخاب رشته نهم": return await ninth_start(message,state)
     if t=="🚀 کوچینگ تحصیلی":
         db.request_counseling(s["id"],"coaching","علاقه‌مند به کوچینگ")
+        db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"coaching"})
         return await message.answer("✅ درخواست کوچینگ در CRM ثبت شد.",reply_markup=main_menu())
     if t=="👨‍👩‍👧 مشاوره والدین":
         db.request_counseling(s["id"],"parents","درخواست مشاوره والدین")
         return await message.answer("✅ درخواست مشاوره والدین ثبت شد.",reply_markup=main_menu())
     if t=="📞 درخواست مشاوره":
         db.request_counseling(s["id"],"general","درخواست عمومی")
+        db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"general"})
         return await message.answer("✅ درخواست شما ثبت شد.",reply_markup=main_menu())
 
 @dp.message(CommandStart())
 async def start(message:Message,state:FSMContext):
     parts=(message.text or "").split(maxsplit=1)
-    referral=parts[1].strip() if len(parts)>1 else ""
-    s=db.get_student_by_tg(message.from_user.id)
+    referral=(parts[1].strip() if len(parts)>1 else "")[:64]
+    existing=db.get_student_by_tg(message.from_user.id)
+    db.track_referral_event(message.from_user.id,"start",referral or "",existing["id"] if existing else None,{"start_parameter":referral})
+    s=existing
     if not s:
         await begin_registration(message,state,referral)
         return
@@ -351,6 +395,9 @@ async def r6(message:Message,state:FSMContext):
         text="✅ اطلاعات شما با موفقیت به‌روزرسانی شد و پرونده قبلی حفظ شد."
     else:
         db.create_student(payload)
+        s_new=db.get_student_by_tg(message.from_user.id)
+        source=payload.get("referral_source","") or ""
+        db.track_referral_event(message.from_user.id,"registration_complete",source,s_new["id"] if s_new else None)
         text="✅ ثبت‌نام کامل شد. از این لحظه همه آزمون‌ها و نتایج به پرونده شما متصل می‌شوند."
     await state.clear()
     await message.answer(text, reply_markup=main_menu())
@@ -1310,6 +1357,12 @@ async def quick_assessment_answer(message: Message, state: FSMContext):
 
     # Build a complete local report first; AI can enrich it, but it can never erase the answers.
     base_report=local_quick_analysis(answers)
+    db.track_referral_event(
+        message.from_user.id,"quick_assessment_complete",
+        db.first_referral_source(message.from_user.id),
+        student["id"],
+        {"goal":answers.get("goal",""),"grade":answers.get("grade","")}
+    )
     await state.clear()
     await message.answer("🤖 هر ۶ پاسخ ثبت شد. در حال آماده‌سازی تحلیل کامل...",reply_markup=nav([]))
 
@@ -1350,16 +1403,26 @@ async def quick_assessment_answer(message: Message, state: FSMContext):
     except Exception:
         is_member=False
     if is_member:
-        markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]])
+        markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📤 معرفی ارزیابی به دوست",callback_data="share_invite")],
+            [InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]
+        ])
         suffix="\n\n✅ عضویت شما در کانال ترنم همدلی فعال است؛ می‌توانید مسیر آموزشی را ادامه دهید."
     else:
         markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📢 عضویت در کانال ترنم همدلی",url=CHANNEL_URL)],
             [InlineKeyboardButton(text="✅ عضو شدم",callback_data="quick_check_channel")],
+            [InlineKeyboardButton(text="📤 معرفی این ارزیابی به دوست",callback_data="share_invite")],
             [InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]
         ])
         suffix="\n\n📢 اگر می‌خواهی محتوای آموزشی و نکات مشاوره‌ای ترنم همدلی را هم دریافت کنی، عضو کانال شو و بعد «عضو شدم» را بزن."
     await message.answer("🎯 نتیجه ارزیابی سریع تو\n\n"+final_text+suffix, reply_markup=markup)
+
+@dp.callback_query(F.data=="share_invite")
+async def share_invite_callback(cq: CallbackQuery):
+    await cq.answer()
+    await share_invite(cq.message)
+
 
 @dp.callback_query(F.data=="quick_check_channel")
 async def quick_check_channel(cq: CallbackQuery):
@@ -1371,6 +1434,8 @@ async def quick_check_channel(cq: CallbackQuery):
         print(f"[CHANNEL] membership check failed: {type(e).__name__}: {e}",flush=True)
         ok=False
     if ok:
+        s=db.get_student_by_tg(cq.from_user.id)
+        db.track_referral_event(cq.from_user.id,"channel_join_verified",db.first_referral_source(cq.from_user.id),s["id"] if s else None)
         await cq.message.answer(
             "✅ عضویت شما تأیید شد.\n\nحالا می‌توانید از امکانات آموزشی و دستیار هوشمند استفاده کنید.",
             reply_markup=main_menu()
@@ -1521,6 +1586,8 @@ async def run_bot():
             try:
                 await bot.delete_webhook(drop_pending_updates=False)
                 me=await bot.get_me()
+                global BOT_USERNAME
+                BOT_USERNAME=(me.username or "").strip().lstrip("@")
                 print(f"[BOT] connected as @{me.username or me.id}",flush=True)
                 await dp.start_polling(bot, handle_signals=False)
                 delay=5
