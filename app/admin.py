@@ -41,6 +41,7 @@ def page(title: str, body: str) -> HTMLResponse:
       <a href="/admin/import">ورود CSV</a>
       <a href="/admin/csv-template">قالب CSV</a>
       <a href="/admin/requests">درخواست‌ها</a>
+      <a href="/admin/marketing">📣 آمار بازاریابی</a>
     </div>
     """
 
@@ -142,12 +143,71 @@ def dashboard(req: Request):
       <div class="card">درخواست‌های جدید<div class="n">{s.get('requests', 0)}</div></div>
     </div>
     <div class="actions">
+      <a class="btn" href="/admin/marketing">📣 قیف جذب و لینک‌های کمپین</a>
       <a class="btn" href="/admin/questions/cleanup">🧹 حذف تکراری‌های بانک</a>
       <a class="btn" href="/admin/questions/report">📊 گزارش پوشش مباحث</a>
     </div>
     <p class="muted">ورود CSV فقط اضافه می‌کند و داده‌های دانش‌آموزان را حذف نمی‌کند. پاک‌سازی تکراری‌ها یک عملیات جدا و قابل مشاهده است.</p>
     """
     return page("داشبورد", body)
+
+
+@app.get("/admin/marketing", response_class=HTMLResponse)
+def marketing(req: Request):
+    if (g := guard(req)):
+        return g
+
+    m = db.marketing_stats()
+    bot_username = os.getenv("BOT_USERNAME", "").strip().lstrip("@")
+    base = f"https://t.me/{bot_username}" if bot_username else "https://t.me/YOUR_BOT_USERNAME"
+    sources = m.get("sources", [])
+    rows = ""
+    for x in sources:
+        rows += (
+            f"<tr><td>{esc(x['source'])}</td><td>{x['starts']}</td>"
+            f"<td>{x['registrations']}</td><td>{x['quick_completed']}</td>"
+            f"<td>{x['channel_joins']}</td><td>{x['counseling_requests']}</td></tr>"
+        )
+
+    campaigns = [
+        ("پوستر گروه‌ها", "group_poster"),
+        ("کانال والدین", "parent_channels"),
+        ("کانال دانش‌آموزی", "student_channels"),
+        ("اینستاگرام", "instagram"),
+        ("پوستر مرکز", "center_poster"),
+        ("معرفی دوستان", "share"),
+    ]
+    links = "".join(
+        f"<tr><td>{esc(title)}</td><td><code>{esc(base+'?start='+code)}</code></td></tr>"
+        for title, code in campaigns
+    )
+
+    body = f"""
+    <h1>📣 قیف جذب و بازاریابی</h1>
+    <div class="grid">
+      <div class="card">شروع‌ها<div class="n">{m.get('starts',0)}</div></div>
+      <div class="card">ثبت‌نام کامل<div class="n">{m.get('registrations',0)}</div></div>
+      <div class="card">ارزیابی سریع کامل<div class="n">{m.get('quick_completed',0)}</div></div>
+      <div class="card">عضویت تأییدشده کانال<div class="n">{m.get('channel_joins',0)}</div></div>
+      <div class="card">درخواست مشاوره<div class="n">{m.get('counseling_requests',0)}</div></div>
+    </div>
+
+    <h2>لینک‌های آماده کمپین</h2>
+    <p class="muted">هر لینک منبع متفاوتی ثبت می‌کند تا بعداً مشخص شود کدام کانال/پوستر کاربر بیشتری آورده است.</p>
+    <table><tr><th>کمپین</th><th>لینک</th></tr>{links}</table>
+
+    <h2>عملکرد هر منبع</h2>
+    <table>
+      <tr><th>منبع</th><th>شروع</th><th>ثبت‌نام</th><th>ارزیابی سریع</th><th>عضویت کانال</th><th>درخواست مشاوره</th></tr>
+      {rows || '<tr><td colspan="6">هنوز داده‌ای ثبت نشده است.</td></tr>'}
+    </table>
+
+    <p class="muted">
+      نکته: این آمار بر اساس رویدادهای ثبت‌شده در ربات است. یک کاربر می‌تواند چند بار /start بزند؛
+      بنابراین «شروع‌ها» با «افراد یکتا» یکسان نیست.
+    </p>
+    """
+    return page("آمار بازاریابی", body)
 
 
 @app.get("/admin/students", response_class=HTMLResponse)
