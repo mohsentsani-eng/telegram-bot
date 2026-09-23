@@ -157,6 +157,17 @@ def init_db():
         checked_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS referral_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER,
+        student_id INTEGER,
+        source TEXT,
+        event TEXT NOT NULL,
+        metadata_json TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(student_id) REFERENCES students(id)
+    );
+
     CREATE TABLE IF NOT EXISTS ai_analyses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         student_id INTEGER NOT NULL,
@@ -190,6 +201,61 @@ def get_student_by_tg(tg):
 
 def get_student(student_id):
     c=conn(); r=c.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone(); c.close(); return r
+
+def track_referral_event(telegram_id, event, source="", student_id=None, metadata=None):
+    """Record marketing-funnel events without changing student data."""
+    c=conn()
+    c.execute(
+        "INSERT INTO referral_events(telegram_id,student_id,source,event,metadata_json) VALUES(?,?,?,?,?)",
+        (telegram_id, student_id, source or "", event, json.dumps(metadata or {}, ensure_ascii=False))
+    )
+    c.commit()
+    c.close()
+
+
+def first_referral_source(telegram_id):
+    c=conn()
+    row=c.execute(
+        "SELECT source FROM referral_events WHERE telegram_id=? AND source<>'' "
+        "ORDER BY id ASC LIMIT 1", (telegram_id,)
+    ).fetchone()
+    c.close()
+    return (row["source"] if row else "") or ""
+
+
+def marketing_stats():
+    c=conn()
+    out={}
+    out["starts"]=c.execute("SELECT COUNT(*) n FROM referral_events WHERE event='start'").fetchone()["n"]
+    out["registrations"]=c.execute("SELECT COUNT(*) n FROM referral_events WHERE event='registration_complete'").fetchone()["n"]
+    out["quick_completed"]=c.execute("SELECT COUNT(*) n FROM referral_events WHERE event='quick_assessment_complete'").fetchone()["n"]
+    out["channel_joins"]=c.execute("SELECT COUNT(*) n FROM referral_events WHERE event='channel_join_verified'").fetchone()["n"]
+    out["counseling_requests"]=c.execute("SELECT COUNT(*) n FROM referral_events WHERE event='counseling_request'").fetchone()["n"]
+    rows=c.execute(
+        "SELECT COALESCE(NULLIF(source,''),'بدون منبع') source, "
+        "COUNT(*) starts, "
+        "SUM(CASE WHEN event='registration_complete' THEN 1 ELSE 0 END) registrations, "
+        "SUM(CASE WHEN event='quick_assessment_complete' THEN 1 ELSE 0 END) quick_completed, "
+        "SUM(CASE WHEN event='channel_join_verified' THEN 1 ELSE 0 END) channel_joins, "
+        "SUM(CASE WHEN event='counseling_request' THEN 1 ELSE 0 END) counseling_requests "
+        "FROM referral_events GROUP BY COALESCE(NULLIF(source,''),'بدون منبع') "
+        "ORDER BY starts DESC"
+    ).fetchall()
+    out["sources"]=[dict(x) for x in rows]
+    c.close()
+    return out
+
+
+def recent_referral_events(limit=100):
+    c=conn()
+    rows=c.execute(
+        "SELECT e.*, s.first_name, s.last_name FROM referral_events e "
+        "LEFT JOIN students s ON s.id=e.student_id ORDER BY e.id DESC LIMIT ?",
+        (limit,)
+    ).fetchall()
+    c.close()
+    return rows
+
 
 def create_student(data):
     c=conn()
