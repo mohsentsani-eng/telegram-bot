@@ -1522,109 +1522,9 @@ async def menu(message:Message,state:FSMContext):
         db.request_counseling(s["id"],"general","درخواست عمومی")
         return await message.answer("✅ درخواست شما ثبت شد.",reply_markup=main_menu())
 
-DAILY_MESSAGES = [
-    "امروز لازم نیست عالی باشی؛ فقط یک قدم واقعی جلو برو. 📚🌱",
-    "تمرکز یعنی به کار امروزت فرصت بدهی، نه اینکه هم‌زمان نگران فردا باشی. 🎯",
-    "یک ساعت مطالعه عمیق، از چند ساعت مطالعه پراکنده ارزشمندتر است. ⏱️",
-    "اگر حوصله نداری، با ۱۰ دقیقه شروع کن؛ شروع، سخت‌ترین بخش ماجراست. 🚀",
-    "اشتباهات آزمون، کارنامه شکست نیستند؛ نقشه راه یادگیری‌اند. 📝",
-    "امروز فقط یک مبحث را بهتر از دیروز یاد بگیر. همین کافی است. 🌱",
-    "مقایسه‌ات را با دیروز خودت انجام بده؛ رشد از همان‌جا دیده می‌شود. 💪",
-    "برنامه خوب، برنامه‌ای نیست که شلوغ باشد؛ برنامه‌ای است که اجرا شود. 📅",
-    "وقتی خسته‌ای، استراحت هدفمند بخشی از مطالعه است، نه فرار از آن. 🧠",
-    "نتیجه بزرگ از تکرار قدم‌های کوچک ساخته می‌شود. امروزت را جدی بگیر. ✨",
-    "یک تست غلط، اگر تحلیل شود، می‌تواند از یک تست درست بیشتر به تو یاد بدهد. 🔎",
-    "قبل از شروع درس، فقط یک هدف کوچک مشخص کن؛ ذهنت مسیر را راحت‌تر پیدا می‌کند. 🎯",
-    "پیشرفت همیشه پرسر و صدا نیست؛ گاهی فقط یعنی امروز تسلیم نشدی. 🌿",
-    "اگر برنامه عقب افتاد، برنامه را اصلاح کن؛ خودت را سرزنش نکن. 📌",
-    "ذهن آرام بهتر یاد می‌گیرد؛ بین مطالعه‌ها چند دقیقه نفس بکش. 🧘",
-    "امروز یک کار سخت را زودتر انجام بده؛ حس کنترل بیشتری خواهی داشت. ⚡",
-    "موفقیت تحصیلی فقط دانستن نیست؛ دانستن + استمرار + مرور است. 📚",
-    "به جای «چقدر مانده؟» بپرس «امروز چه چیزی را می‌توانم تمام کنم؟» 🎯",
-    "اگر یک درس ضعیف است، از آن فرار نکن؛ آن را به یک هدف کوچک روزانه تبدیل کن. 🌱",
-    "آرام و پیوسته جلو رفتن، از شروع‌های هیجانی و توقف‌های طولانی بهتر است. 🚶",
-]
-
-# If the editable JSON bank exists, use it; otherwise the built-in bank keeps the
-# publisher reliable even when the file is missing.
-try:
-    _daily_json_path=os.path.join(os.path.dirname(__file__),"..","data","daily_messages.json")
-    with open(_daily_json_path,encoding="utf-8") as _f:
-        _loaded=json.load(_f).get("messages",[])
-    if _loaded: DAILY_MESSAGES=_loaded
-except Exception:
-    pass
-
-def _daily_state_path():
-    return os.path.join(os.path.dirname(__file__),"..","data","daily_message_state.json")
-
-def _daily_state():
-    path=_daily_state_path()
-    try:
-        with open(path,encoding="utf-8") as f: return json.load(f)
-    except Exception: return {}
-
-def _save_daily_state(state):
-    path=_daily_state_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp=path+".tmp"
-    with open(tmp,"w",encoding="utf-8") as f: json.dump(state,f,ensure_ascii=False,indent=2)
-    os.replace(tmp,path)
-
-def _daily_timezone():
-    name=os.getenv("DAILY_MESSAGE_TIMEZONE","Asia/Tehran").strip() or "Asia/Tehran"
-    try: return ZoneInfo(name)
-    except Exception:
-        print(f"[CHANNEL] invalid timezone {name!r}; falling back to UTC",flush=True)
-        return datetime.timezone.utc
-
-async def publish_daily_message_once(now=None):
-    tz=_daily_timezone()
-    now=now or datetime.datetime.now(tz)
-    day=now.strftime("%Y-%m-%d")
-    st=_daily_state()
-    if st.get("last_date")==day: return False
-    if not DAILY_MESSAGES:
-        print("[CHANNEL] daily message bank is empty",flush=True)
-        return False
-    idx=int(st.get("index",-1))+1
-    msg=DAILY_MESSAGES[idx % len(DAILY_MESSAGES)]
-    try:
-        await bot.send_message(CHANNEL_ID,"🌱 <b>پیام امروز ترنم همدلی</b>\n\n"+msg)
-        _save_daily_state({"last_date":day,"index":idx})
-        print(f"[CHANNEL] daily message published: {day} (#{idx+1})",flush=True)
-        return True
-    except Exception as e:
-        # Do not mark the date as sent when Telegram rejects the message. The
-        # scheduler will retry automatically instead of silently losing the day.
-        print(f"[CHANNEL] daily message failed: {type(e).__name__}: {e}",flush=True)
-        return False
-
-async def daily_channel_loop():
-    try: hour=int(os.getenv("DAILY_MESSAGE_HOUR","9")); minute=int(os.getenv("DAILY_MESSAGE_MINUTE","0"))
-    except ValueError: hour,minute=9,0
-    hour=max(0,min(23,hour)); minute=max(0,min(59,minute))
-    tz=_daily_timezone()
-    print(f"[CHANNEL] daily scheduler active at {hour:02d}:{minute:02d} {getattr(tz,'key',tz)}",flush=True)
-    while True:
-        try:
-            now=datetime.datetime.now(tz)
-            target=now.replace(hour=hour,minute=minute,second=0,microsecond=0)
-            # If the service was down at the scheduled time, publish as soon as
-            # it comes back online. If it is before the scheduled time, wait.
-            if now >= target:
-                await publish_daily_message_once(now)
-            await asyncio.sleep(60)
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            print(f"[CHANNEL] scheduler error: {type(e).__name__}: {e}",flush=True)
-            await asyncio.sleep(60)
-
 async def run_bot():
     # Polling is deliberately self-healing: temporary Telegram/network errors
     # should not take the service offline until Railway restarts the container.
-    daily_task=asyncio.create_task(daily_channel_loop())
     delay=5
     try:
         while True:
@@ -1644,8 +1544,5 @@ async def run_bot():
                 await asyncio.sleep(delay)
                 delay=min(delay*2,60)
     finally:
-        daily_task.cancel()
-        try: await daily_task
-        except asyncio.CancelledError: pass
         try: await bot.session.close()
         except Exception: pass
