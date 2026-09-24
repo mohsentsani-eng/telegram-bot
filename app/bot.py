@@ -17,6 +17,7 @@ CHANNEL_ID=os.getenv("REQUIRED_CHANNEL_ID","@tarnoomhamdeli").strip() or "@tarno
 CHANNEL_URL=os.getenv("REQUIRED_CHANNEL_URL","").strip() or "https://t.me/tarnoomhamdeli"
 CHANNEL_USERNAME="@tarnoomhamdeli"
 BOT_USERNAME=os.getenv("BOT_USERNAME","").strip().lstrip("@")
+INSTAGRAM_URL=os.getenv("INSTAGRAM_URL","").strip() or "https://www.instagram.com/tarannomhamdeli.psy/"
 
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN is not set. Put your bot token in .env")
@@ -59,6 +60,7 @@ def main_menu():
     return kb([
         ["🎯 ارزیابی سریع من"],
         ["📢 کانال ترنم همدلی","📤 معرفی به دوست"],
+        ["📸 پیج اینستاگرام ترنم همدلی"],
         ["📊 ارزیابی تحصیلی","🧠 ارزیابی روان‌شناختی"],
         ["📚 مهارت‌های یادگیری","📅 برنامه‌ریزی تخصصی"],
         ["🚀 کوچینگ تحصیلی","🧭 انتخاب رشته نهم"],
@@ -146,6 +148,32 @@ async def channel_cta(message, intro=""):
         [InlineKeyboardButton(text="✅ عضو شدم",callback_data="check_channel")]
     ]))
     return True
+
+@dp.message(F.text == "📸 پیج اینستاگرام ترنم همدلی")
+async def instagram_menu(message:Message):
+    s=db.get_student_by_tg(message.from_user.id)
+    db.track_referral_event(message.from_user.id,"instagram_view",db.first_referral_source(message.from_user.id),s["id"] if s else None)
+    await message.answer(
+        "📸 <b>پیج اینستاگرام ترنم همدلی</b>\n\n"
+        "محتوای کوتاه و کاربردی درباره مطالعه، برنامه‌ریزی، انتخاب رشته و سلامت روان تحصیلی را در پیج ما دنبال کن. 🌱\n\n"
+        "🎁 بعد از سر زدن به پیج، به بات برگرد و «✅ وارد پیج شدم» را بزن.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📸 ورود به پیج اینستاگرام",url=INSTAGRAM_URL)],
+            [InlineKeyboardButton(text="✅ وارد پیج شدم",callback_data="instagram_returned")],
+            [InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]
+        ])
+    )
+
+@dp.callback_query(F.data=="instagram_returned")
+async def instagram_returned(cq:CallbackQuery):
+    await cq.answer()
+    s=db.get_student_by_tg(cq.from_user.id)
+    db.track_referral_event(cq.from_user.id,"instagram_returned",db.first_referral_source(cq.from_user.id),s["id"] if s else None)
+    await cq.message.answer(
+        "🌱 ممنون که به پیج ترنم همدلی سر زدی.\n\n"
+        "برای ادامه، می‌توانی از ارزیابی رایگان، برنامه‌ریزی و سایر خدمات بات استفاده کنی.",
+        reply_markup=main_menu()
+    )
 
 @dp.message(F.text == "📤 معرفی به دوست")
 async def share_menu(message:Message):
@@ -287,6 +315,7 @@ MAIN_ACTIONS = {
     "🎓 انتخاب رشته کنکور", "👨‍👩‍👧 مشاوره والدین",
     "🤖 دستیار هوشمند", "👤 پرونده من",
     "📤 معرفی به دوست",
+    "📸 پیج اینستاگرام ترنم همدلی",
     "📞 درخواست مشاوره", "🔄 ثبت‌نام مجدد",
 }
 
@@ -298,6 +327,8 @@ async def global_main_action(message:Message,state:FSMContext):
     s=db.get_student_by_tg(message.from_user.id)
     if message.text == "📤 معرفی به دوست":
         return await share_invite(message)
+    if message.text == "📸 پیج اینستاگرام ترنم همدلی":
+        return await instagram_menu(message)
     if message.text == "📢 کانال ترنم همدلی":
         if await channel_ok(message.from_user.id):
             return await message.answer("✅ شما عضو کانال ترنم همدلی هستید.\n\nاز محتوای آموزشی و خدمات ربات استفاده کنید.", reply_markup=main_menu())
@@ -310,6 +341,7 @@ async def global_main_action(message:Message,state:FSMContext):
     await state.clear()
     t=message.text
     if t=="📤 معرفی به دوست": return await share_invite(message)
+    if t=="📸 پیج اینستاگرام ترنم همدلی": return await instagram_menu(message)
     if t=="🎯 ارزیابی سریع من": return await quick_assessment_start(message,state)
     if t=="🤖 دستیار هوشمند": return await ai_menu(message,state)
     if t=="👤 پرونده من": return await show_profile(message)
