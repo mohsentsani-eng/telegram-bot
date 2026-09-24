@@ -166,7 +166,7 @@ def marketing(req: Request):
         rows += (
             f"<tr><td>{esc(x['source'])}</td><td>{x['starts']}</td>"
             f"<td>{x['registrations']}</td><td>{x['quick_completed']}</td>"
-            f"<td>{x['channel_joins']}</td><td>{x['counseling_requests']}</td></tr>"
+            f"<td>{x['channel_joins']}</td><td>{x['counseling_requests']}</td><td>{x['instagram_clicks']}</td></tr>"
         )
 
     campaigns = [
@@ -190,6 +190,9 @@ def marketing(req: Request):
       <div class="card">ارزیابی سریع کامل<div class="n">{m.get('quick_completed',0)}</div></div>
       <div class="card">عضویت تأییدشده کانال<div class="n">{m.get('channel_joins',0)}</div></div>
       <div class="card">درخواست مشاوره<div class="n">{m.get('counseling_requests',0)}</div></div>
+      <div class="card">بازدید از مسیر اینستاگرام<div class="n">{m.get('instagram_views',0)}</div></div>
+      <div class="card">کلیک ورود به اینستاگرام<div class="n">{m.get('instagram_clicks',0)}</div></div>
+      <div class="card">بازگشت به بات<div class="n">{m.get('instagram_returned',0)}</div></div>
     </div>
 
     <h2>لینک‌های آماده کمپین</h2>
@@ -198,8 +201,8 @@ def marketing(req: Request):
 
     <h2>عملکرد هر منبع</h2>
     <table>
-      <tr><th>منبع</th><th>شروع</th><th>ثبت‌نام</th><th>ارزیابی سریع</th><th>عضویت کانال</th><th>درخواست مشاوره</th></tr>
-      {rows if rows else '<tr><td colspan="6">هنوز داده‌ای ثبت نشده است.</td></tr>'}
+      <tr><th>منبع</th><th>شروع</th><th>ثبت‌نام</th><th>ارزیابی سریع</th><th>عضویت کانال</th><th>درخواست مشاوره</th><th>اینستاگرام</th></tr>
+      {rows if rows else '<tr><td colspan="7">هنوز داده‌ای ثبت نشده است.</td></tr>'}
     </table>
 
     <p class="muted">
