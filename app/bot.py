@@ -158,9 +158,22 @@ async def instagram_menu(message:Message):
         "محتوای کوتاه و کاربردی درباره مطالعه، برنامه‌ریزی، انتخاب رشته و سلامت روان تحصیلی را در پیج ما دنبال کن. 🌱\n\n"
         "🎁 بعد از سر زدن به پیج، به بات برگرد و «✅ وارد پیج شدم» را بزن.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📸 ورود به پیج اینستاگرام",url=INSTAGRAM_URL)],
+            [InlineKeyboardButton(text="📸 ورود به پیج اینستاگرام",callback_data="instagram_open")],
             [InlineKeyboardButton(text="✅ وارد پیج شدم",callback_data="instagram_returned")],
             [InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]
+        ])
+    )
+
+@dp.callback_query(F.data=="instagram_open")
+async def instagram_open(cq:CallbackQuery):
+    await cq.answer()
+    s=db.get_student_by_tg(cq.from_user.id)
+    db.track_referral_event(cq.from_user.id,"instagram_click",db.first_referral_source(cq.from_user.id),s["id"] if s else None)
+    await cq.message.answer(
+        "📸 برای ورود به پیج، روی دکمه زیر بزن:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📸 باز کردن پیج اینستاگرام",url=INSTAGRAM_URL)],
+            [InlineKeyboardButton(text="✅ وارد پیج شدم",callback_data="instagram_returned")]
         ])
     )
 
