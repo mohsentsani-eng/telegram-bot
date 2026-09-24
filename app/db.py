@@ -231,13 +231,16 @@ def marketing_stats():
     out["quick_completed"]=c.execute("SELECT COUNT(*) n FROM referral_events WHERE event='quick_assessment_complete'").fetchone()["n"]
     out["channel_joins"]=c.execute("SELECT COUNT(*) n FROM referral_events WHERE event='channel_join_verified'").fetchone()["n"]
     out["counseling_requests"]=c.execute("SELECT COUNT(*) n FROM referral_events WHERE event='counseling_request'").fetchone()["n"]
+    out["instagram_clicks"]=c.execute("SELECT COUNT(*) n FROM referral_events WHERE event='instagram_click'").fetchone()["n"]
+    out["instagram_views"]=c.execute("SELECT COUNT(*) n FROM referral_events WHERE event='instagram_view'").fetchone()["n"]
+    out["instagram_returned"]=c.execute("SELECT COUNT(*) n FROM referral_events WHERE event='instagram_returned'").fetchone()["n"]
     rows=c.execute(
         "SELECT COALESCE(NULLIF(source,''),'بدون منبع') source, "
         "COUNT(*) starts, "
         "SUM(CASE WHEN event='registration_complete' THEN 1 ELSE 0 END) registrations, "
         "SUM(CASE WHEN event='quick_assessment_complete' THEN 1 ELSE 0 END) quick_completed, "
         "SUM(CASE WHEN event='channel_join_verified' THEN 1 ELSE 0 END) channel_joins, "
-        "SUM(CASE WHEN event='counseling_request' THEN 1 ELSE 0 END) counseling_requests "
+        "SUM(CASE WHEN event='counseling_request' THEN 1 ELSE 0 END) counseling_requests, SUM(CASE WHEN event='instagram_click' THEN 1 ELSE 0 END) instagram_clicks, SUM(CASE WHEN event='instagram_view' THEN 1 ELSE 0 END) instagram_views, SUM(CASE WHEN event='instagram_returned' THEN 1 ELSE 0 END) instagram_returned "
         "FROM referral_events GROUP BY COALESCE(NULLIF(source,''),'بدون منبع') "
         "ORDER BY starts DESC"
     ).fetchall()
