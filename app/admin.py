@@ -746,3 +746,76 @@ def requests(req: Request):
         + "</table>"
     )
     return page("درخواست‌ها", body)
+
+
+# ---------- Daily reports / counselor control ----------
+@app.get("/admin/daily-reports", response_class=HTMLResponse)
+def daily_reports_dashboard(req: Request):
+    if (g := guard(req)):
+        return g
+    c = db.conn()
+    today = __import__("datetime").date.today().isoformat()
+    total = c.execute("SELECT COUNT(*) n FROM students WHERE registered=1").fetchone()["n"]
+    today_reports = c.execute("SELECT COUNT(*) n FROM daily_reports WHERE report_date=?", (today,)).fetchone()["n"]
+    status_rows = c.execute("SELECT status,COUNT(*) n FROM student_progress WHERE report_date=(SELECT MAX(report_date) FROM student_progress) GROUP BY status").fetchall()
+    flags = c.execute("""SELECT f.*,s.first_name,s.last_name,s.grade,s.track
+                         FROM ai_flags f JOIN students s ON s.id=f.student_id
+                         WHERE f.status='open' ORDER BY CASE f.severity WHEN 'urgent_review' THEN 1 WHEN 'followup' THEN 2 ELSE 3 END,f.id DESC LIMIT 100""").fetchall()
+    overdue = c.execute("""SELECT fu.*,s.first_name,s.last_name
+                           FROM followups fu JOIN students s ON s.id=fu.student_id
+                           WHERE fu.status='open' ORDER BY fu.id DESC LIMIT 100""").fetchall()
+    c.close()
+    status_map={r["status"]:r["n"] for r in status_rows}
+    flag_rows="".join(
+        f"<tr><td>{r['first_name']} {r['last_name']}</td><td>{esc(r['grade'])} {esc(r['track'])}</td>"
+        f"<td>{esc(r['severity'])}</td><td>{esc(r['reason'])}</td><td>{esc(r['created_at'])}</td></tr>" for r in flags
+    )
+    follow_rows="".join(
+        f"<tr><td>{r['first_name']} {r['last_name']}</td><td>{esc(r['followup_type'])}</td>"
+        f"<td>{esc(r['priority'])}</td><td>{esc(r['status'])}</td><td>{esc(r['created_at'])}</td></tr>" for r in overdue
+    )
+    body=f"""
+    <h1>🌙 گزارش‌های روزانه و پیگیری مشاور</h1>
+    <div class="grid">
+      <div class="card">دانش‌آموز فعال<div class="n">{total}</div></div>
+      <div class="card">گزارش امروز<div class="n">{today_reports}</div></div>
+      <div class="card">🟢 مناسب<div class="n">{status_map.get('normal',0)}</div></div>
+      <div class="card">🟡 توجه<div class="n">{status_map.get('attention',0)}</div></div>
+      <div class="card">🟠 پیگیری<div class="n">{status_map.get('followup',0)}</div></div>
+      <div class="card">🔴 بررسی سریع<div class="n">{status_map.get('urgent_review',0)}</div></div>
+    </div>
+    <div class="actions">
+      <a class="btn" href="/admin">داشبورد اصلی</a>
+      <a class="btn" href="/admin/daily-reports">به‌روزرسانی</a>
+    </div>
+    <h2>🚩 موارد نیازمند توجه</h2>
+    <table><tr><th>دانش‌آموز</th><th>پایه/رشته</th><th>شدت</th><th>دلیل</th><th>تاریخ</th></tr>
+    {flag_rows if flag_rows else '<tr><td colspan="5">مورد باز ثبت نشده است.</td></tr>'}</table>
+    <h2>📋 پیگیری‌های باز</h2>
+    <table><tr><th>دانش‌آموز</th><th>نوع</th><th>اولویت</th><th>وضعیت</th><th>تاریخ</th></tr>
+    {follow_rows if follow_rows else '<tr><td colspan="5">پیگیری بازی ثبت نشده است.</td></tr>'}</table>
+    """
+    return page("گزارش روزانه", body)
+
+@app.get("/admin/student/{student_id}/reports", response_class=HTMLResponse)
+def student_reports(req: Request, student_id: int):
+    if (g := guard(req)):
+        return g
+    c=db.conn()
+    s=c.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone()
+    rows=c.execute("SELECT * FROM daily_reports WHERE student_id=? ORDER BY report_date DESC LIMIT 60",(student_id,)).fetchall()
+    c.close()
+    if not s:
+        return page("پرونده", "<div class='err'>دانش‌آموز پیدا نشد.</div>")
+    trs="".join(
+        f"<tr><td>{r['report_date']}</td><td>{r['study_hours'] or 0:g}</td><td>{r['plan_execution'] or 0:g}%</td>"
+        f"<td>{r['practice_count'] or 0}</td><td>{esc(r['main_problem'])}</td><td>{esc(r['status'])}</td>"
+        f"<td>{esc(r['analysis_status'])}</td></tr>" for r in rows
+    )
+    body=f"""
+    <h1>📋 گزارش‌های {esc(s['first_name'])} {esc(s['last_name'])}</h1>
+    <p>پایه: {esc(s['grade'])} | رشته: {esc(s['track'])}</p>
+    <table><tr><th>تاریخ</th><th>مطالعه</th><th>اجرای برنامه</th><th>تست/تمرین</th><th>مشکل اصلی</th><th>وضعیت</th><th>تحلیل</th></tr>
+    {trs if trs else '<tr><td colspan="7">گزارشی ثبت نشده است.</td></tr>'}</table>
+    """
+    return page("گزارش‌های دانش‌آموز", body)
