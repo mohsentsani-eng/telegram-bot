@@ -41,6 +41,7 @@ def page(title: str, body: str) -> HTMLResponse:
       <a href="/admin/import">ورود CSV</a>
       <a href="/admin/csv-template">قالب CSV</a>
       <a href="/admin/requests">درخواست‌ها</a>
+      <a href="/admin/daily-reports">🌙 گزارش روزانه</a>
       <a href="/admin/marketing">📣 آمار بازاریابی</a>
     </div>
     """
@@ -144,6 +145,7 @@ def dashboard(req: Request):
     </div>
     <div class="actions">
       <a class="btn" href="/admin/marketing">📣 قیف جذب و لینک‌های کمپین</a>
+      <a class="btn" href="/admin/daily-reports">🌙 گزارش روزانه و پیگیری مشاور</a>
       <a class="btn" href="/admin/questions/cleanup">🧹 حذف تکراری‌های بانک</a>
       <a class="btn" href="/admin/questions/report">📊 گزارش پوشش مباحث</a>
     </div>
