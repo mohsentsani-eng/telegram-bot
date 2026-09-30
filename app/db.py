@@ -501,8 +501,14 @@ def list_counselor_notes(student_id, limit=30):
         LEFT JOIN counselors c ON c.id=n.counselor_id WHERE n.student_id=? ORDER BY n.id DESC LIMIT ?""",(student_id,limit)).fetchall(); c.close(); return rows
 
 def create_followup(student_id, followup_type="general", priority="normal", due_at=None, note=""):
-    c=conn(); cur=c.execute("INSERT INTO followups(student_id,followup_type,priority,status,due_at,note) VALUES(?,?,?,?,?,?)",
-                            (student_id,followup_type,priority,"open",due_at,note)); c.commit(); rid=cur.lastrowid; c.close(); return rid
+    c=conn()
+    counselor=c.execute("""SELECT counselor_id FROM student_counselor_assignments
+                           WHERE student_id=? AND active=1 ORDER BY id DESC LIMIT 1""",(student_id,)).fetchone()
+    counselor_id=counselor["counselor_id"] if counselor else None
+    cur=c.execute("""INSERT INTO followups(student_id,counselor_id,followup_type,priority,status,due_at,note)
+                     VALUES(?,?,?,?,?,?,?)""",
+                  (student_id,counselor_id,followup_type,priority,"open",due_at,note))
+    c.commit(); rid=cur.lastrowid; c.close(); return rid
 
 def list_open_followups(student_id=None, limit=100):
     c=conn()
