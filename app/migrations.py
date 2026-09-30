@@ -253,10 +253,6 @@ def migrate():
     """)
     _add_column(c, "ai_analyses", "structured_json", "TEXT")
     _add_column(c, "ai_analyses", "status", "TEXT DEFAULT 'completed'")
-    c.execute("INSERT INTO schema_migrations(version) VALUES(?)", (TARGET_VERSION,))
-    c.commit()
-    c.close()
-    print(f"[MIGRATION] schema version {TARGET_VERSION} applied", flush=True)
 
     # v2: call-center agents, call logs and sales attribution.
     if current < 2:
@@ -288,7 +284,9 @@ def migrate():
         cols=[r[1] for r in c.execute("PRAGMA table_info(registrations)").fetchall()]
         if "sales_agent_id" not in cols:
             c.execute("ALTER TABLE registrations ADD COLUMN sales_agent_id INTEGER")
-        c.execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(2,CURRENT_TIMESTAMP)")
-        c.commit()
-        current=2
+
+    c.execute("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(?,CURRENT_TIMESTAMP)", (TARGET_VERSION,))
+    c.commit()
+    c.close()
+    print(f"[MIGRATION] schema version {TARGET_VERSION} applied", flush=True)
     return True
