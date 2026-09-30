@@ -32,42 +32,20 @@ DIFFS=["آسان","متوسط","سخت","تشخیصی"]
 
 # Curriculum-aware subject map. The bank and menu use the same canonical names,
 # so a subject can never disappear just because an old CSV used a different label.
-PRIMARY_SUBJECTS=["آموزش قرآن","هدیه‌های آسمان","فارسی","نگارش","ریاضی","علوم تجربی","مطالعات اجتماعی"]
-SIXTH_SUBJECTS=PRIMARY_SUBJECTS+["تفکر و پژوهش","کار و فناوری"]
-MIDDLE_SUBJECTS=["آموزش قرآن","پیام‌های آسمان","فارسی","نگارش","ریاضی","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی","تفکر و سبک زندگی","فرهنگ و هنر","کار و فناوری"]
-NINTH_SUBJECTS=MIDDLE_SUBJECTS+["آمادگی دفاعی"]
-
-HIGH_GENERAL={
-    "دهم":["فارسی","نگارش","دین و زندگی","عربی","زبان انگلیسی","آمادگی دفاعی","جغرافیای ایران","تفکر و سواد رسانه‌ای","کارگاه کارآفرینی و تولید"],
-    "یازدهم":["فارسی","نگارش","دین و زندگی","عربی","زبان انگلیسی","انسان و محیط زیست","تاریخ معاصر ایران"],
-    "دوازدهم":["فارسی","نگارش","دین و زندگی","عربی","زبان انگلیسی","سلامت و بهداشت","هویت اجتماعی","مدیریت خانواده و سبک زندگی"],
-}
-TRACK_SUBJECTS={
-    "ریاضی":{
-        "دهم":["ریاضی","هندسه","فیزیک","شیمی"],
-        "یازدهم":["حسابان","هندسه","آمار و احتمال","فیزیک","شیمی"],
-        "دوازدهم":["حسابان","هندسه","ریاضیات گسسته","فیزیک","شیمی"],
-    },
-    "تجربی":{
-        "دهم":["زیست‌شناسی","شیمی","فیزیک","ریاضی"],
-        "یازدهم":["زیست‌شناسی","شیمی","فیزیک","ریاضی","زمین‌شناسی"],
-        "دوازدهم":["زیست‌شناسی","شیمی","فیزیک","ریاضی"],
-    },
-    "انسانی":{
-        "دهم":["علوم و فنون ادبی","ریاضی و آمار","تاریخ","جغرافیای ایران","جامعه‌شناسی","اقتصاد","منطق"],
-        "یازدهم":["علوم و فنون ادبی","ریاضی و آمار","تاریخ","جغرافیا","جامعه‌شناسی","روان‌شناسی","فلسفه"],
-        "دوازدهم":["علوم و فنون ادبی","ریاضی و آمار","تاریخ","جغرافیا","جامعه‌شناسی","فلسفه"],
-    },
-}
+QUESTION_BANK_CATALOG_PATH=os.path.join(os.path.dirname(__file__),"..","data","question_bank_catalog.json")
+try:
+    with open(QUESTION_BANK_CATALOG_PATH,encoding="utf-8") as _f:
+        QUESTION_BANK_CATALOG=json.load(_f)
+except Exception:
+    QUESTION_BANK_CATALOG={}
 
 def grade_subjects(grade, track=""):
-    if grade in {"چهارم","پنجم"}: return PRIMARY_SUBJECTS
-    if grade=="ششم": return SIXTH_SUBJECTS
-    if grade in {"هفتم","هشتم"}: return MIDDLE_SUBJECTS
-    if grade=="نهم": return NINTH_SUBJECTS
-    if grade in HIGH_GENERAL:
-        return HIGH_GENERAL[grade] + TRACK_SUBJECTS.get(track,{}).get(grade,[])
-    return HIGH_GENERAL.get(grade,[])
+    entry=QUESTION_BANK_CATALOG.get(grade, {})
+    if isinstance(entry,list):
+        return list(entry)
+    if isinstance(entry,dict):
+        return list(entry.get(track, entry.get("عمومی", [])))
+    return []
 
 def is_konkur_eligible_grade(grade):
     return grade in {"دوازدهم","فارغ‌التحصیل / پشت‌کنکوری"}
