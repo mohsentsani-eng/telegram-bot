@@ -185,7 +185,7 @@ def init_db():
         try:
             import csv as _csv
             base_dir = Path(__file__).resolve().parent.parent / "data"
-            seed_files = [base_dir / "question_bank_coverage.csv", base_dir / "expanded_questions.csv", base_dir / "d10_humanities_questions.csv", base_dir / "seed_questions.csv"]
+            seed_files = [base_dir / "core_question_bank.csv", base_dir / "question_bank_coverage.csv", base_dir / "expanded_questions.csv", base_dir / "d10_humanities_questions.csv", base_dir / "seed_questions.csv"]
             for seed_path in seed_files:
                 if not seed_path.exists():
                     continue
