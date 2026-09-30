@@ -2,7 +2,7 @@ import os, json, random, asyncio, datetime, time
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, StateFilter
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -249,12 +249,12 @@ async def begin_registration(message:Message,state:FSMContext, referral="", rene
 
 # این هندلر عمداً قبل از تمام State Handlerها قرار گرفته تا «بازگشت» و «منوی اصلی»
 # در هر مرحله‌ای از ثبت‌نام یا آزمون، واقعاً کار کنند.
-@dp.message(F.text == HOME)
+@dp.message(StateFilter("*"), F.text == HOME)
 async def global_home(message:Message,state:FSMContext):
     await state.clear()
     await message.answer("🏠 منوی اصلی ترنم همدلی", reply_markup=main_menu())
 
-@dp.message(F.text == BACK)
+@dp.message(StateFilter("*"), F.text == BACK)
 async def global_back(message:Message,state:FSMContext):
     """بازگشت واقعی به مرحله قبلی، نه همیشه منوی اصلی."""
     current = await state.get_state()
@@ -331,10 +331,10 @@ MAIN_ACTIONS = {
     "🤖 دستیار هوشمند", "👤 پرونده من",
     "📤 معرفی به دوست",
     "📸 پیج اینستاگرام ترنم همدلی",
-    "📞 درخواست مشاوره", "🔄 ثبت‌نام مجدد",
+    "📞 درخواست مشاوره", "🔄 ثبت‌نام مجدد", "🌙 گزارش امروز",
 }
 
-@dp.message(F.text.in_(MAIN_ACTIONS))
+@dp.message(StateFilter("*"), F.text.in_(MAIN_ACTIONS))
 async def global_main_action(message:Message,state:FSMContext):
     # Existing dedicated handlers registered earlier (notably the channel button)
     # get the first chance to handle their own action. This handler covers menu
