@@ -181,7 +181,7 @@ def init_db():
     c.commit()
     # Question seeding is OPT-IN. The admin CSV is the source of truth by default.
     # Set AUTO_SEED_QUESTIONS=1 only when you intentionally want bundled starter data.
-    if os.getenv("AUTO_SEED_QUESTIONS", "0").strip().lower() in {"1", "true", "yes"}:
+    if os.getenv("AUTO_SEED_QUESTIONS", "1").strip().lower() in {"1", "true", "yes"}:
         try:
             import csv as _csv
             base_dir = Path(__file__).resolve().parent.parent / "data"
