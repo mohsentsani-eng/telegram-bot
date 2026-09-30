@@ -380,6 +380,8 @@ async def global_main_action(message:Message,state:FSMContext):
         return await message.answer("✅ درخواست مشاوره والدین ثبت شد.",reply_markup=main_menu())
     if t=="📞 درخواست مشاوره":
         db.request_counseling(s["id"],"general","درخواست عمومی")
+        lead_id=db.upsert_lead_from_student(s["id"])
+        if lead_id: db.set_lead_status(lead_id,"interested")
         db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"general"})
         return await message.answer("✅ درخواست شما ثبت شد.",reply_markup=main_menu())
 
