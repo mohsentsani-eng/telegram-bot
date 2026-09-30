@@ -507,14 +507,17 @@ async def ac1(message:Message,state:FSMContext):
     subjects=db.distinct_question_field("subject",f)
     if message.text not in subjects: return
     f["subject"]=message.text; f.pop("chapter",None); f.pop("topic",None); f.pop("difficulty",None)
-    chapters=db.distinct_question_field("chapter",f)
+    all_chapters=db.distinct_question_field("chapter",f)
+    # Only expose chapters that can actually produce a 10-question exam.
+    # The full subject baseline ("آزمون جامع") is always preferred when present.
+    chapters=[x for x in all_chapters if db.count_questions({**f,"chapter":x})>=10]
     await state.update_data(filters=f)
     if chapters:
         await state.set_state(Academic.chapter)
         await message.answer("فصل را انتخاب کنید:",reply_markup=nav(chapters))
     else:
         await state.set_state(Academic.difficulty)
-        await message.answer("سطح را انتخاب کنید:",reply_markup=nav(DIFFS))
+        await message.answer("برای این درس آزمون ۱۰ سؤالی آماده است. سطح آزمون را انتخاب کنید:",reply_markup=nav(DIFFS))
 
 @dp.message(Academic.chapter)
 async def ac2(message:Message,state:FSMContext):
@@ -522,16 +525,16 @@ async def ac2(message:Message,state:FSMContext):
     chapters=db.distinct_question_field("chapter",f)
     if message.text not in chapters: return
     f["chapter"]=message.text; f.pop("topic",None); f.pop("difficulty",None)
-    topics=db.distinct_question_field("topic",f); await state.update_data(filters=f)
+    all_topics=db.distinct_question_field("topic",f)
+    topics=[x for x in all_topics if db.count_questions({**f,"topic":x})>=10]
+    await state.update_data(filters=f)
     if topics:
         await state.set_state(Academic.topic)
-        counts=[f"{x} ({db.count_questions({**f,'topic':x})})" for x in topics]
-        # Keep button text equal to the stored topic; counts go in the prompt, not buttons.
         total=db.count_questions(f)
-        await message.answer(f"مبحث را انتخاب کنید: (مجموع سؤال‌های این فصل: {total})",reply_markup=nav(topics))
+        await message.answer(f"مبحث را انتخاب کنید: (مجموع سؤال‌های قابل آزمون این فصل: {total})",reply_markup=nav(topics))
     else:
         await state.set_state(Academic.difficulty)
-        await message.answer("سطح را انتخاب کنید:",reply_markup=nav(DIFFS))
+        await message.answer("برای این فصل یک آزمون ۱۰ سؤالی آماده است. سطح آزمون را انتخاب کنید:",reply_markup=nav(DIFFS))
 
 @dp.message(Academic.topic)
 async def ac3(message:Message,state:FSMContext):
