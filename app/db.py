@@ -191,6 +191,7 @@ def init_db():
             base_dir / "expanded_questions.csv",
             base_dir / "question_bank_completion.csv",
             base_dir / "d10_humanities_questions.csv",
+            base_dir / "art_math_physics_bank.csv",
             base_dir / "seed_questions.csv",
         ]
         inserted = 0
