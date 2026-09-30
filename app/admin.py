@@ -44,6 +44,9 @@ def page(title: str, body: str) -> HTMLResponse:
       <a href="/admin/daily-reports">🌙 گزارش روزانه</a>
       <a href="/admin/counselors">👨‍🏫 مشاوران</a>
       <a href="/admin/marketing">📣 آمار بازاریابی</a>
+      <a href="/admin/crm">📇 CRM و پیگیری</a>
+      <a href="/admin/registrations">💰 ثبت‌نام خدمات</a>
+      <a href="/admin/kpi">📈 KPI تیم</a>
     </div>
     """
 
@@ -887,3 +890,177 @@ def assign_counselor_admin(req: Request, student_id: int, counselor_id: int = Fo
     if (g := guard(req)): return g
     db.assign_counselor(student_id,counselor_id)
     return RedirectResponse(f"/admin/student/{student_id}/reports", status_code=303)
+
+
+# ---------- CRM / Call-center / Sales ----------
+
+@app.get("/admin/crm", response_class=HTMLResponse)
+def crm_dashboard(req: Request):
+    if (g := guard(req)):
+        return g
+    m=db.crm_stats()
+    body=f"""
+    <h1>📇 CRM و پیگیری فروش</h1>
+    <div class="grid">
+      <div class="card">کل سرنخ‌ها<div class="n">{m['total_leads']}</div></div>
+      <div class="card">در انتظار تماس<div class="n">{m['lead']}</div></div>
+      <div class="card">تماس گرفته‌شده<div class="n">{m['contacted']}</div></div>
+      <div class="card">علاقه‌مند<div class="n">{m['interested']}</div></div>
+      <div class="card">پیگیری<div class="n">{m['followup']}</div></div>
+      <div class="card">ثبت‌نام‌شده<div class="n">{m['registered']}</div></div>
+      <div class="card">از دست‌رفته<div class="n">{m['lost']}</div></div>
+      <div class="card">پیگیری باز<div class="n">{m['open_followups']}</div></div>
+      <div class="card">درآمد ثبت‌شده<div class="n">{m['revenue']:,.0f}</div></div>
+    </div>
+    <div class="actions">
+      <a class="btn primary" href="/admin/leads">📞 صف تماس</a>
+      <a class="btn" href="/admin/registrations">💰 ثبت خدمات</a>
+      <a class="btn" href="/admin/kpi">📈 KPI مشاوران</a>
+    </div>
+    <p class="muted">تغییر وضعیت و ثبت تماس فقط به رکورد CRM اضافه می‌کند و اطلاعات پرونده دانش‌آموز را پاک یا بازنویسی نمی‌کند.</p>
+    """
+    return page("CRM",body)
+
+@app.get("/admin/leads", response_class=HTMLResponse)
+def leads(req: Request, status: str = ""):
+    if (g := guard(req)):
+        return g
+    rows=db.list_leads(status.strip() or None)
+    trs=""
+    for r in rows:
+        trs += f"""<tr>
+        <td><a href="/admin/lead/{r['id']}">{r['id']}</a></td>
+        <td>{esc(r['name'])}</td><td>{esc(r['phone'])}</td><td>{esc(r['source'])}</td>
+        <td>{esc(r['status'])}</td><td>{r['contacts']}</td><td>{esc(r['updated_at'])}</td></tr>"""
+    body=f"""<h1>📞 صف تماس و سرنخ‌ها</h1>
+    <div class="actions">
+      <a class="btn" href="/admin/leads?status=lead">فقط جدیدها</a>
+      <a class="btn" href="/admin/leads?status=contacted">تماس‌شده</a>
+      <a class="btn" href="/admin/leads?status=interested">علاقه‌مند</a>
+      <a class="btn" href="/admin/leads?status=followup">پیگیری</a>
+      <a class="btn" href="/admin/leads">همه</a>
+    </div>
+    <table><tr><th>ID</th><th>نام</th><th>تلفن</th><th>منبع</th><th>وضعیت</th><th>تعداد تماس</th><th>آخرین تغییر</th></tr>
+    {trs or '<tr><td colspan="7">سرنخی ثبت نشده است.</td></tr>'}</table>"""
+    return page("سرنخ‌ها",body)
+
+@app.get("/admin/lead/{lid}", response_class=HTMLResponse)
+def lead(req: Request,lid:int):
+    if (g := guard(req)):
+        return g
+    d=db.lead_details(lid)
+    l=d["lead"]
+    if not l:
+        return page("یافت نشد","<div class='err'>سرنخ یافت نشد.</div>")
+    contacts="".join(f"<tr><td>{esc(x['contacted_at'])}</td><td>{esc(x['result'])}</td><td>{esc(x['note'])}</td></tr>" for x in d["contacts"])
+    history="".join(f"<tr><td>{esc(x['created_at'])}</td><td>{esc(x['old_status'])}</td><td>{esc(x['new_status'])}</td></tr>" for x in d["history"])
+    body=f"""
+    <h1>📞 سرنخ #{l['id']}</h1>
+    <p><b>{esc(l['name'])}</b> | تلفن: {esc(l['phone'])} | منبع: {esc(l['source'])}</p>
+    <p>وضعیت فعلی: <b>{esc(l['status'])}</b></p>
+    <h2>ثبت تماس</h2>
+    <form method="post" action="/admin/lead/{lid}/contact">
+      <select name="result" required>
+        <option value="contacted">تماس برقرار شد</option>
+        <option value="interested">علاقه‌مند شد</option>
+        <option value="followup">نیاز به پیگیری</option>
+        <option value="registered">ثبت‌نام کرد</option>
+        <option value="lost">عدم پیگیری/از دست‌رفته</option>
+      </select>
+      <textarea name="note" placeholder="خلاصه تماس، نیاز، زمان پیگیری و نکات مهم"></textarea>
+      <button type="submit">ثبت تماس و تغییر وضعیت</button>
+    </form>
+    <h2>تاریخچه تماس</h2>
+    <table><tr><th>زمان</th><th>نتیجه</th><th>یادداشت</th></tr>{contacts or '<tr><td colspan="3">هنوز تماسی ثبت نشده است.</td></tr>'}</table>
+    <h2>تاریخچه وضعیت</h2>
+    <table><tr><th>زمان</th><th>قبلی</th><th>جدید</th></tr>{history or '<tr><td colspan="3">تغییری ثبت نشده است.</td></tr>'}</table>
+    """
+    return page("جزئیات سرنخ",body)
+
+@app.post("/admin/lead/{lid}/contact")
+async def lead_contact(req: Request,lid:int):
+    if (g := guard(req)):
+        return g
+    form=dict(await req.form())
+    result=str(form.get("result","contacted"))
+    note=str(form.get("note","")).strip()
+    if result not in {"contacted","interested","followup","registered","lost"}:
+        result="contacted"
+    db.add_lead_contact(lid,result,note)
+    if result=="followup":
+        d=db.lead_details(lid); l=d["lead"]
+        if l:
+            c=db.conn()
+            s=c.execute("SELECT id FROM students WHERE telegram_id=?",(l["telegram_id"],)).fetchone() if l["telegram_id"] else None
+            c.close()
+            if s: db.create_followup(s["id"],"call_followup","normal",None,note)
+    return RedirectResponse(f"/admin/lead/{lid}",status_code=303)
+
+@app.get("/admin/registrations", response_class=HTMLResponse)
+def registrations(req: Request):
+    if (g := guard(req)):
+        return g
+    c=db.conn()
+    rows=c.execute("""SELECT r.*,s.first_name,s.last_name FROM registrations r
+                     JOIN students s ON s.id=r.student_id ORDER BY r.id DESC LIMIT 300""").fetchall()
+    c.close()
+    sales=db.sales_summary(30)
+    trs="".join(f"<tr><td>{r['id']}</td><td><a href='/admin/student/{r['student_id']}'>{esc(r['first_name'])} {esc(r['last_name'])}</a></td><td>{esc(r['service'])}</td><td>{r['amount']:,.0f}</td><td>{esc(r['status'])}</td><td>{esc(r['created_at'])}</td></tr>" for r in rows)
+    sr="".join(f"<tr><td>{esc(r['service'])}</td><td>{r['count']}</td><td>{r['revenue']:,.0f}</td></tr>" for r in sales)
+    body=f"""
+    <h1>💰 ثبت‌نام خدمات و فروش</h1>
+    <div class="actions"><a class="btn primary" href="/admin/registration/new">➕ ثبت فروش/خدمت</a></div>
+    <h2>فروش ۳۰ روز اخیر</h2>
+    <table><tr><th>خدمت</th><th>تعداد</th><th>درآمد</th></tr>{sr or '<tr><td colspan="3">داده‌ای نیست.</td></tr>'}</table>
+    <h2>ثبت‌نام‌ها</h2>
+    <table><tr><th>ID</th><th>دانش‌آموز</th><th>خدمت</th><th>مبلغ</th><th>وضعیت</th><th>زمان</th></tr>{trs or '<tr><td colspan="6">ثبت‌نامی نیست.</td></tr>'}</table>
+    """
+    return page("فروش",body)
+
+@app.get("/admin/registration/new", response_class=HTMLResponse)
+def registration_new(req: Request):
+    if (g := guard(req)):
+        return g
+    students=db.list_students(1000)
+    opts="".join(f"<option value='{s['id']}'>{esc(s['first_name'])} {esc(s['last_name'])} — {esc(s['phone'])}</option>" for s in students)
+    body=f"""<h1>➕ ثبت خدمت/فروش</h1>
+    <form method="post">
+      <select name="student_id" required>{opts}</select>
+      <input name="service" placeholder="نام خدمت؛ مثال: کوچینگ سالانه" required>
+      <input name="amount" type="number" step="1" min="0" placeholder="مبلغ تومان" required>
+      <select name="status"><option value="registered">ثبت‌نام</option><option value="paid">پرداخت‌شده</option><option value="pending">در انتظار پرداخت</option></select>
+      <button type="submit">ثبت</button>
+    </form>"""
+    return page("ثبت فروش",body)
+
+@app.post("/admin/registration/new")
+async def registration_new_post(req: Request):
+    if (g := guard(req)):
+        return g
+    form=dict(await req.form())
+    try:
+        db.register_service(int(form["student_id"]),str(form["service"]).strip(),float(form["amount"]),str(form.get("status","registered")))
+        return RedirectResponse("/admin/registrations",status_code=303)
+    except Exception as e:
+        return page("خطا",f"<div class='err'>{esc(e)}</div>")
+
+@app.get("/admin/kpi", response_class=HTMLResponse)
+def kpi(req: Request):
+    if (g := guard(req)):
+        return g
+    m=db.crm_stats()
+    rows=db.counselor_kpi(30)
+    trs="".join(f"<tr><td>{esc(r['name'])}</td><td>{r['assigned']}</td><td>{r['notes']}</td><td>{r['followups_created']}</td><td>{r['followups_done']}</td></tr>" for r in rows)
+    body=f"""
+    <h1>📈 KPI تیم</h1>
+    <p class="muted">بازه عملکرد مشاوران: ۳۰ روز اخیر. اعداد توصیفی‌اند و برای پایش عملیات استفاده می‌شوند.</p>
+    <div class="grid">
+      <div class="card">کل سرنخ<div class="n">{m['total_leads']}</div></div>
+      <div class="card">کل تماس‌ها<div class="n">{m['contacts']}</div></div>
+      <div class="card">پیگیری باز<div class="n">{m['open_followups']}</div></div>
+      <div class="card">درآمد ثبت‌شده<div class="n">{m['revenue']:,.0f}</div></div>
+    </div>
+    <table><tr><th>مشاور</th><th>دانش‌آموز فعال</th><th>یادداشت ۳۰روزه</th><th>پیگیری ایجادشده</th><th>پیگیری تکمیل‌شده</th></tr>
+    {trs or '<tr><td colspan="5">مشاوری ثبت نشده است.</td></tr>'}</table>
+    """
+    return page("KPI تیم",body)
