@@ -42,6 +42,7 @@ def page(title: str, body: str) -> HTMLResponse:
       <a href="/admin/csv-template">قالب CSV</a>
       <a href="/admin/requests">درخواست‌ها</a>
       <a href="/admin/daily-reports">🌙 گزارش روزانه</a>
+      <a href="/admin/counselors">👨‍🏫 مشاوران</a>
       <a href="/admin/marketing">📣 آمار بازاریابی</a>
     </div>
     """
@@ -821,3 +822,46 @@ def student_reports(req: Request, student_id: int):
     {trs if trs else '<tr><td colspan="7">گزارشی ثبت نشده است.</td></tr>'}</table>
     """
     return page("گزارش‌های دانش‌آموز", body)
+
+
+@app.post("/admin/followup/{followup_id}/complete")
+def complete_followup(req: Request, followup_id: int):
+    if (g := guard(req)): return g
+    db.complete_followup(followup_id)
+    return RedirectResponse("/admin/daily-reports", status_code=303)
+
+@app.post("/admin/student/{student_id}/note")
+def add_note(req: Request, student_id: int, note: str = Form(...)):
+    if (g := guard(req)): return g
+    db.add_counselor_note(student_id, None, note.strip())
+    return RedirectResponse(f"/admin/student/{student_id}/reports", status_code=303)
+
+@app.get("/admin/counselors", response_class=HTMLResponse)
+def counselors(req: Request):
+    if (g := guard(req)): return g
+    rows=db.list_counselors(False)
+    trs="".join(f"<tr><td>{r['id']}</td><td>{esc(r['name'])}</td><td>{esc(r['telegram_id'])}</td><td>{'فعال' if r['active'] else 'غیرفعال'}</td></tr>" for r in rows)
+    body=f"""
+    <h1>👨‍🏫 مشاوران</h1>
+    <form method="post" action="/admin/counselors/add" class="card">
+      <label>نام مشاور</label><input name="name" required>
+      <label>Telegram ID (اختیاری)</label><input name="telegram_id">
+      <button>افزودن مشاور</button>
+    </form>
+    <table><tr><th>ID</th><th>نام</th><th>Telegram ID</th><th>وضعیت</th></tr>
+    {trs if trs else '<tr><td colspan="4">هنوز مشاوری ثبت نشده است.</td></tr>'}</table>
+    """
+    return page("مشاوران",body)
+
+@app.post("/admin/counselors/add")
+def add_counselor(req: Request, name: str = Form(...), telegram_id: str = Form("")):
+    if (g := guard(req)): return g
+    tid=int(telegram_id) if telegram_id.strip().isdigit() else None
+    db.add_counselor(name.strip(),tid)
+    return RedirectResponse("/admin/counselors", status_code=303)
+
+@app.post("/admin/student/{student_id}/assign-counselor")
+def assign_counselor_admin(req: Request, student_id: int, counselor_id: int = Form(...)):
+    if (g := guard(req)): return g
+    db.assign_counselor(student_id,counselor_id)
+    return RedirectResponse(f"/admin/student/{student_id}/reports", status_code=303)
