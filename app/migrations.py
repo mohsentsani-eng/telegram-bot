@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from . import db
 
-TARGET_VERSION = 1
+TARGET_VERSION = 2
 
 def _backup_path():
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -257,4 +257,38 @@ def migrate():
     c.commit()
     c.close()
     print(f"[MIGRATION] schema version {TARGET_VERSION} applied", flush=True)
+
+    # v2: call-center agents, call logs and sales attribution.
+    if current < 2:
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS call_center_agents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            phone TEXT,
+            active INTEGER DEFAULT 1,
+            monthly_base REAL DEFAULT 2500000,
+            commission_rate REAL DEFAULT 0.05,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS call_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lead_id INTEGER NOT NULL,
+            agent_id INTEGER NOT NULL,
+            result TEXT NOT NULL,
+            effective INTEGER DEFAULT 0,
+            converted INTEGER DEFAULT 0,
+            note TEXT,
+            contacted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(lead_id) REFERENCES leads(id),
+            FOREIGN KEY(agent_id) REFERENCES call_center_agents(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_call_logs_agent_date ON call_logs(agent_id,contacted_at);
+        CREATE INDEX IF NOT EXISTS idx_call_logs_lead ON call_logs(lead_id);
+        """)
+        cols=[r[1] for r in c.execute("PRAGMA table_info(registrations)").fetchall()]
+        if "sales_agent_id" not in cols:
+            c.execute("ALTER TABLE registrations ADD COLUMN sales_agent_id INTEGER")
+        c.execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(2,CURRENT_TIMESTAMP)")
+        c.commit()
+        current=2
     return True
