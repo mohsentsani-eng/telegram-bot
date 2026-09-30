@@ -815,9 +815,31 @@ def student_reports(req: Request, student_id: int):
         f"<td>{r['practice_count'] or 0}</td><td>{esc(r['main_problem'])}</td><td>{esc(r['status'])}</td>"
         f"<td>{esc(r['analysis_status'])}</td></tr>" for r in rows
     )
+    counselors_rows="".join(f"<option value='{r['id']}'>{esc(r['name'])}</option>" for r in db.list_counselors(True))
+    active=db.active_counselor(student_id)
+    summary=db.weekly_summary(student_id,7)
+    notes=db.list_counselor_notes(student_id,10)
+    note_rows="".join(f"<li>{esc(n['note'])} <span class='muted'>({esc(n['created_at'])})</span></li>" for n in notes)
     body=f"""
     <h1>📋 گزارش‌های {esc(s['first_name'])} {esc(s['last_name'])}</h1>
     <p>پایه: {esc(s['grade'])} | رشته: {esc(s['track'])}</p>
+    <div class="grid">
+      <div class="card">مشاور فعلی<div class="n" style="font-size:20px">{esc(active['name']) if active else 'تخصیص نشده'}</div></div>
+      <div class="card">روزهای گزارش‌شده<div class="n">{summary['days']}</div></div>
+      <div class="card">ساعت مطالعه هفته<div class="n">{summary['study_hours']:.1f}</div></div>
+      <div class="card">میانگین اجرای برنامه<div class="n">{summary['execution']:.0f}%</div></div>
+      <div class="card">تست/تمرین هفته<div class="n">{summary['practice']}</div></div>
+    </div>
+    <form method="post" action="/admin/student/{student_id}/assign-counselor" class="card">
+      <label>تخصیص مشاور</label>
+      <select name="counselor_id" required>{counselors_rows or '<option value="">ابتدا مشاور اضافه کنید</option>'}</select>
+      <button>ثبت تخصیص</button>
+    </form>
+    <form method="post" action="/admin/student/{student_id}/note" class="card">
+      <label>یادداشت مشاور/مدیر</label><textarea name="note" required></textarea>
+      <button>ثبت یادداشت</button>
+    </form>
+    <h3>یادداشت‌های اخیر</h3><ul>{note_rows or '<li>یادداشتی ثبت نشده است.</li>'}</ul>
     <table><tr><th>تاریخ</th><th>مطالعه</th><th>اجرای برنامه</th><th>تست/تمرین</th><th>مشکل اصلی</th><th>وضعیت</th><th>تحلیل</th></tr>
     {trs if trs else '<tr><td colspan="7">گزارشی ثبت نشده است.</td></tr>'}</table>
     """
