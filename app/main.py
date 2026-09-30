@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from .db import init_db
+from .migrations import backup_before_migration, migrate
 from .admin import app
 from .bot import run_bot
 
@@ -31,7 +32,10 @@ def _find_available_port(host: str, preferred: int, attempts: int = 20) -> int:
 async def main():
     import uvicorn
 
+    # Safety first: backup existing SQLite before any schema migration.
+    backup_before_migration()
     init_db()
+    migrate()
 
     host = os.getenv("ADMIN_HOST", "0.0.0.0").strip() or "0.0.0.0"
     try:
