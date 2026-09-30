@@ -11,6 +11,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from . import db
 from . import ai
+from .daily_reports import register as register_daily_reports
 
 TOKEN=os.getenv("BOT_TOKEN")
 CHANNEL_ID=os.getenv("REQUIRED_CHANNEL_ID","@tarnoomhamdeli").strip() or "@tarnoomhamdeli"
@@ -63,6 +64,7 @@ def main_menu():
         ["📸 پیج اینستاگرام ترنم همدلی"],
         ["📊 ارزیابی تحصیلی","🧠 ارزیابی روان‌شناختی"],
         ["📚 مهارت‌های یادگیری","📅 برنامه‌ریزی تخصصی"],
+        ["🌙 گزارش امروز"],
         ["🚀 کوچینگ تحصیلی","🧭 انتخاب رشته نهم"],
         ["🎓 انتخاب رشته کنکور","👨‍👩‍👧 مشاوره والدین"],
         ["🤖 دستیار هوشمند","👤 پرونده من"],
@@ -1522,6 +1524,8 @@ async def menu(message:Message,state:FSMContext):
         db.request_counseling(s["id"],"general","درخواست عمومی")
         return await message.answer("✅ درخواست شما ثبت شد.",reply_markup=main_menu())
 
+DAILY_REPORT_TASK = register_daily_reports(dp, bot)
+
 async def run_bot():
     # Polling is deliberately self-healing: temporary Telegram/network errors
     # should not take the service offline until Railway restarts the container.
@@ -1544,5 +1548,7 @@ async def run_bot():
                 await asyncio.sleep(delay)
                 delay=min(delay*2,60)
     finally:
+        if DAILY_REPORT_TASK:
+            DAILY_REPORT_TASK.cancel()
         try: await bot.session.close()
         except Exception: pass
