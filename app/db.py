@@ -731,3 +731,17 @@ def call_center_kpi(days=30):
         WHERE a.active=1 GROUP BY a.id,a.name,a.monthly_base,a.commission_rate
         ORDER BY calls DESC,a.id""",(since,since)).fetchall()
     c.close(); return rows
+
+
+def monthly_call_center_payroll(year_month=None):
+    ym=year_month or __import__("datetime").datetime.now().strftime("%Y-%m")
+    c=conn()
+    rows=c.execute("""SELECT a.id,a.name,a.monthly_base,a.commission_rate,
+        COALESCE(SUM(CASE WHEN r.status IN ('registered','paid') THEN r.amount ELSE 0 END),0) revenue
+        FROM call_center_agents a
+        LEFT JOIN registrations r ON r.sales_agent_id=a.id AND substr(r.created_at,1,7)=?
+        WHERE a.active=1 GROUP BY a.id,a.name,a.monthly_base,a.commission_rate ORDER BY a.id""",(ym,)).fetchall()
+    c.close()
+    return [{**dict(r),"commission":float(r["revenue"] or 0)*float(r["commission_rate"] or 0),
+             "total_pay":float(r["monthly_base"] or 0)+float(r["revenue"] or 0)*float(r["commission_rate"] or 0)}
+            for r in rows]
