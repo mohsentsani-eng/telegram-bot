@@ -475,10 +475,15 @@ def stats():
     c.close(); return out
 
 
-def save_ai_analysis(student_id, analysis_type, title, content):
+def save_ai_analysis(student_id, analysis_type, title, content, structured=None, status="completed"):
     c=conn()
-    c.execute("INSERT INTO ai_analyses(student_id,analysis_type,title,content) VALUES(?,?,?,?)",
-              (student_id, analysis_type, title, content))
+    # Compatible with both pre-migration and migrated databases.
+    if any(r[1] == "structured_json" for r in c.execute("PRAGMA table_info(ai_analyses)").fetchall()):
+        c.execute("INSERT INTO ai_analyses(student_id,analysis_type,title,content,structured_json,status) VALUES(?,?,?,?,?,?)",
+                  (student_id, analysis_type, title, content, json.dumps(structured, ensure_ascii=False) if structured is not None else None, status))
+    else:
+        c.execute("INSERT INTO ai_analyses(student_id,analysis_type,title,content) VALUES(?,?,?,?)",
+                  (student_id, analysis_type, title, content))
     c.commit()
     rid=c.execute("SELECT last_insert_rowid()").fetchone()[0]
     c.close()
