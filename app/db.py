@@ -574,3 +574,109 @@ def latest_ai_analysis(student_id, analysis_type=None):
     else:
         r=c.execute("SELECT * FROM ai_analyses WHERE student_id=? ORDER BY id DESC LIMIT 1",(student_id,)).fetchone()
     c.close(); return r
+
+
+# ---------- CRM / Sales / Call-center helpers ----------
+
+def upsert_lead_from_student(student_id, source=""):
+    s=get_student(student_id)
+    if not s:
+        return None
+    c=conn()
+    row=c.execute("SELECT * FROM leads WHERE telegram_id=?", (s["telegram_id"],)).fetchone()
+    src=source or s["referral_source"] or ""
+    if row:
+        c.execute("""UPDATE leads SET name=?,phone=?,source=COALESCE(NULLIF(source,''),?),updated_at=CURRENT_TIMESTAMP
+                     WHERE id=?""",
+                  (f"{s['first_name']} {s['last_name']}".strip(),s["phone"] or "",src,row["id"]))
+        lead_id=row["id"]
+    else:
+        cur=c.execute("""INSERT INTO leads(telegram_id,name,phone,source,status)
+                         VALUES(?,?,?,?,?)""",
+                      (s["telegram_id"],f"{s['first_name']} {s['last_name']}".strip(),s["phone"] or "",src,"lead"))
+        lead_id=cur.lastrowid
+    c.commit(); c.close()
+    return lead_id
+
+def set_lead_status(lead_id, new_status):
+    c=conn()
+    row=c.execute("SELECT status FROM leads WHERE id=?", (lead_id,)).fetchone()
+    if not row:
+        c.close(); return False
+    old=row["status"]
+    if old != new_status:
+        c.execute("UPDATE leads SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",(new_status,lead_id))
+        c.execute("INSERT INTO lead_status_history(lead_id,old_status,new_status) VALUES(?,?,?)",
+                  (lead_id,old,new_status))
+    c.commit(); c.close(); return True
+
+def add_lead_contact(lead_id, result, note=""):
+    c=conn()
+    c.execute("INSERT INTO lead_contacts(lead_id,result,note) VALUES(?,?,?)",(lead_id,result,note or ""))
+    c.commit(); c.close()
+    return set_lead_status(lead_id, result)
+
+def list_leads(status=None, limit=300):
+    c=conn()
+    if status:
+        rows=c.execute("""SELECT l.*, 
+                    (SELECT COUNT(*) FROM lead_contacts lc WHERE lc.lead_id=l.id) contacts
+                    FROM leads l WHERE l.status=? ORDER BY l.updated_at DESC,l.id DESC LIMIT ?""",(status,limit)).fetchall()
+    else:
+        rows=c.execute("""SELECT l.*,
+                    (SELECT COUNT(*) FROM lead_contacts lc WHERE lc.lead_id=l.id) contacts
+                    FROM leads l ORDER BY l.updated_at DESC,l.id DESC LIMIT ?""",(limit,)).fetchall()
+    c.close(); return rows
+
+def lead_details(lead_id):
+    c=conn()
+    lead=c.execute("SELECT * FROM leads WHERE id=?",(lead_id,)).fetchone()
+    contacts=c.execute("SELECT * FROM lead_contacts WHERE lead_id=? ORDER BY id DESC",(lead_id,)).fetchall()
+    history=c.execute("SELECT * FROM lead_status_history WHERE lead_id=? ORDER BY id DESC",(lead_id,)).fetchall()
+    c.close()
+    return {"lead":lead,"contacts":contacts,"history":history}
+
+def crm_stats():
+    c=conn()
+    out={}
+    for status in ("lead","contacted","interested","followup","registered","lost"):
+        out[status]=c.execute("SELECT COUNT(*) n FROM leads WHERE status=?",(status,)).fetchone()["n"]
+    out["total_leads"]=c.execute("SELECT COUNT(*) n FROM leads").fetchone()["n"]
+    out["contacts"]=c.execute("SELECT COUNT(*) n FROM lead_contacts").fetchone()["n"]
+    out["registrations"]=c.execute("SELECT COUNT(*) n FROM registrations").fetchone()["n"]
+    out["revenue"]=c.execute("SELECT COALESCE(SUM(amount),0) n FROM registrations WHERE status IN ('registered','paid')").fetchone()["n"]
+    out["open_followups"]=c.execute("SELECT COUNT(*) n FROM followups WHERE status='open'").fetchone()["n"]
+    c.close()
+    return out
+
+def register_service(student_id, service, amount=0, status="registered"):
+    c=conn()
+    cur=c.execute("INSERT INTO registrations(student_id,service,amount,status) VALUES(?,?,?,?)",
+                  (student_id,service,float(amount or 0),status))
+    c.commit(); rid=cur.lastrowid; c.close()
+    s=get_student(student_id)
+    if s:
+        lead_id=upsert_lead_from_student(student_id)
+        if lead_id:
+            set_lead_status(lead_id,"registered")
+    return rid
+
+def sales_summary(days=30):
+    c=conn()
+    rows=c.execute("""SELECT service,COUNT(*) count,COALESCE(SUM(amount),0) revenue
+                      FROM registrations
+                      WHERE date(created_at)>=date('now', ?)
+                      GROUP BY service ORDER BY revenue DESC""",(f"-{max(1,int(days))-1} days",)).fetchall()
+    c.close()
+    return rows
+
+def counselor_kpi(days=30):
+    c=conn()
+    rows=c.execute("""SELECT c.id,c.name,
+        (SELECT COUNT(*) FROM student_counselor_assignments a WHERE a.counselor_id=c.id AND a.active=1) assigned,
+        (SELECT COUNT(*) FROM counselor_notes n WHERE n.counselor_id=c.id AND date(n.created_at)>=date('now', ?)) notes,
+        (SELECT COUNT(*) FROM followups f WHERE f.counselor_id=c.id AND date(f.created_at)>=date('now', ?)) followups_created,
+        (SELECT COUNT(*) FROM followups f WHERE f.counselor_id=c.id AND f.status='completed' AND date(f.completed_at)>=date('now', ?)) followups_done
+        FROM counselors c WHERE c.active=1 ORDER BY assigned DESC,c.name""",
+        (f"-{max(1,int(days))-1} days",)*3).fetchall()
+    c.close(); return rows
