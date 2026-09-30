@@ -32,48 +32,22 @@ DIFFS=["آسان","متوسط","سخت","تشخیصی"]
 
 # Subject maps are independent of the question-bank contents so a wrong
 # subject can never be shown merely because an old CSV row contains it.
-PRIMARY_SUBJECTS=["آموزش قرآن","هدیه‌های آسمان","فارسی","نگارش فارسی","ریاضی","علوم تجربی","مطالعات اجتماعی"]
-MIDDLE_SUBJECTS=["آموزش قرآن","پیام‌های آسمان","فارسی","نگارش","ریاضی","علوم تجربی","مطالعات اجتماعی","فرهنگ و هنر","عربی","انگلیسی","تفکر و سبک زندگی","کار و فناوری"]
-HIGH_GENERAL_SUBJECTS=["فارسی","نگارش","دین و زندگی","عربی","زبان انگلیسی"]
-HIGH_GENERAL_BY_GRADE={
-    "دهم": HIGH_GENERAL_SUBJECTS + ["تفکر و سواد رسانه‌ای","کارگاه کارآفرینی و تولید","آمادگی دفاعی"],
-    "یازدهم": HIGH_GENERAL_SUBJECTS + ["تاریخ معاصر ایران","انسان و محیط زیست"],
-    "دوازدهم": HIGH_GENERAL_SUBJECTS + ["هویت اجتماعی","سلامت و بهداشت","مدیریت خانواده و سبک زندگی"],
-}
-TRACK_SUBJECTS_BY_GRADE={
-    "دهم":{
-        "ریاضی":["ریاضی","هندسه","فیزیک","شیمی"],
-        "تجربی":["ریاضی","زیست‌شناسی","فیزیک","شیمی"],
-        "انسانی":["ریاضی و آمار","علوم و فنون ادبی","عربی تخصصی","تاریخ","جغرافیا","جامعه‌شناسی","اقتصاد","منطق"],
-        "هنر":["درک عمومی هنر","درک عمومی ریاضی-فیزیک","خلاقیت تصویری و تجسمی"],
-        "زبان":["زبان تخصصی"],
-    },
-    "یازدهم":{
-        "ریاضی":["حسابان","هندسه","آمار و احتمال","فیزیک","شیمی"],
-        "تجربی":["ریاضی","زیست‌شناسی","فیزیک","شیمی","زمین‌شناسی"],
-        "انسانی":["ریاضی و آمار","علوم و فنون ادبی","عربی تخصصی","تاریخ","جغرافیا","جامعه‌شناسی","فلسفه","روان‌شناسی"],
-        "هنر":["درک عمومی هنر","درک عمومی ریاضی-فیزیک","خلاقیت تصویری و تجسمی"],
-        "زبان":["زبان تخصصی"],
-    },
-    "دوازدهم":{
-        "ریاضی":["حسابان","هندسه","ریاضیات گسسته","فیزیک","شیمی"],
-        "تجربی":["ریاضی","زیست‌شناسی","فیزیک","شیمی"],
-        "انسانی":["ریاضی و آمار","علوم و فنون ادبی","عربی تخصصی","تاریخ","جغرافیا","جامعه‌شناسی","فلسفه"],
-        "هنر":["درک عمومی هنر","درک عمومی ریاضی-فیزیک","خلاقیت تصویری و تجسمی"],
-        "زبان":["زبان تخصصی"],
-    },
-}
+# Curriculum is data-driven so subjects stay aligned with the student's exact grade/track.
+CURRICULUM_PATH=os.path.join(os.path.dirname(__file__),"..","data","curriculum_map.json")
+try:
+    with open(CURRICULUM_PATH,encoding="utf-8") as _f:
+        CURRICULUM=json.load(_f)
+except Exception:
+    CURRICULUM={"elementary":{},"middle":{},"secondary":{"common_by_grade":{},"tracks":{}}}
+
 def grade_subjects(grade, track=""):
-    if grade in {"چهارم","پنجم","ششم"}:
-        return PRIMARY_SUBJECTS + (["کار و فناوری","تفکر و پژوهش"] if grade=="ششم" else [])
-    if grade in {"هفتم","هشتم","نهم"}:
-        subjects=list(MIDDLE_SUBJECTS)
-        if grade=="نهم":
-            subjects=[x for x in subjects if x!="تفکر و سبک زندگی"] + ["آمادگی دفاعی"]
-        return subjects
-    general=HIGH_GENERAL_BY_GRADE.get(grade, HIGH_GENERAL_SUBJECTS)
-    special=(TRACK_SUBJECTS_BY_GRADE.get(grade,{}).get(track,[]) if track else [])
-    return general + special
+    if grade in CURRICULUM.get("elementary",{}):
+        return CURRICULUM["elementary"][grade]
+    if grade in CURRICULUM.get("middle",{}):
+        return CURRICULUM["middle"][grade]
+    common=CURRICULUM.get("secondary",{}).get("common_by_grade",{}).get(grade,[])
+    specific=CURRICULUM.get("secondary",{}).get("tracks",{}).get(track,{}).get(grade,[]) if track else []
+    return list(dict.fromkeys(common+specific))
 
 def is_konkur_eligible_grade(grade):
     return grade in {"دوازدهم","فارغ‌التحصیل / پشت‌کنکوری"}
