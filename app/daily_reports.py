@@ -170,7 +170,7 @@ async def finalize_report(student, answers):
               "needs_counselor_review": bool(status in {"followup","urgent_review"} or (ai_result and ai_result.get("needs_counselor_review"))),
               "rule_flags":[{"type":x[0],"severity":x[1],"reason":x[2]} for x in flags]}
     c=db.conn()
-    c.execute("UPDATE daily_reports SET status=?,analysis_status=?,analysis_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",(final_status,"completed" if ai_result else "completed_local",json.dumps(analysis,ensure_ascii=False),report["id"]))
+    c.execute("UPDATE daily_reports SET status=?,analysis_status=?,analysis_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",(final_status,"completed" if ai_result else "pending",json.dumps(analysis,ensure_ascii=False),report["id"]))
     c.execute("INSERT INTO student_progress(student_id,report_date,study_hours,plan_execution,practice_count,status,trend,evidence_json) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(student_id,report_date) DO UPDATE SET study_hours=excluded.study_hours,plan_execution=excluded.plan_execution,practice_count=excluded.practice_count,status=excluded.status,trend=excluded.trend,evidence_json=excluded.evidence_json",(student["id"],report["report_date"],report["study_hours"],report["plan_execution"],report["practice_count"],final_status,analysis["trend"],json.dumps(analysis.get("evidence",[]),ensure_ascii=False)))
     for f in flags:
         c.execute("INSERT INTO ai_flags(student_id,report_id,flag_type,severity,reason) VALUES(?,?,?,?,?)",(student["id"],report["id"],f[0],f[1],f[2]))
@@ -180,7 +180,7 @@ async def finalize_report(student, answers):
         c.execute("INSERT INTO followups(student_id,followup_type,priority,status,note) VALUES(?,?,?,?,?)",(student["id"],"daily_report",final_status,"open","پیگیری بر اساس گزارش روزانه"))
     c.commit(); c.close()
     try:
-        db.save_ai_analysis(student["id"], "daily_report", "تحلیل گزارش روزانه", json.dumps(analysis, ensure_ascii=False), structured=analysis, status="completed" if ai_result else "completed_local")
+        db.save_ai_analysis(student["id"], "daily_report", "تحلیل گزارش روزانه", json.dumps(analysis, ensure_ascii=False), structured=analysis, status="completed" if ai_result else "pending")
     except Exception as exc:
         print(f"[REPORT] AI history save failed: {type(exc).__name__}: {exc}", flush=True)
     return report,analysis
@@ -274,6 +274,16 @@ async def nightly_reminder_loop(bot):
             day=now.date().isoformat()
             if now.hour==REPORT_HOUR and now.minute < 5 and day!=last_day:
                 c=db.conn()
+                # Missing-report rule: three consecutive days without a report creates one open follow-up flag.
+                cutoff=(now.date()-timedelta(days=3)).isoformat()
+                for st in c.execute("SELECT id FROM students WHERE registered=1 AND telegram_id IS NOT NULL").fetchall():
+                    cnt=c.execute("SELECT COUNT(*) n FROM daily_reports WHERE student_id=? AND report_date>=?",(st["id"],cutoff)).fetchone()["n"]
+                    if cnt == 0:
+                        open_flag=c.execute("SELECT id FROM ai_flags WHERE student_id=? AND flag_type='missing_reports' AND status='open' LIMIT 1",(st["id"],)).fetchone()
+                        if not open_flag:
+                            c.execute("INSERT INTO ai_flags(student_id,flag_type,severity,reason) VALUES(?,?,?,?)",(st["id"],"missing_reports","followup","سه روز متوالی گزارشی از عملکرد روزانه ثبت نشده است."))
+                            c.execute("INSERT INTO followups(student_id,followup_type,priority,status,note) VALUES(?,?,?,?,?)",(st["id"],"missing_report","followup","پیگیری به دلیل ثبت نشدن گزارش روزانه"))
+                students=c.execute("SELECT id,telegram_id,first_name FROM students WHERE registered=1 AND telegram_id IS NOT NULL").fetchall()
                 students=c.execute("SELECT id,telegram_id,first_name FROM students WHERE registered=1 AND telegram_id IS NOT NULL").fetchall()
                 for s in students:
                     existing=c.execute("SELECT id FROM daily_reports WHERE student_id=? AND report_date=?",(s["id"],day)).fetchone()
