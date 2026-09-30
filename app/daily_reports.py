@@ -9,7 +9,7 @@ from . import db, ai
 
 TZ = os.getenv("DAILY_REPORT_TIMEZONE", "Asia/Tehran")
 REPORT_HOUR = int(os.getenv("DAILY_REPORT_HOUR", "21"))
-REMINDER_ENABLED = os.getenv("DAILY_REPORT_ENABLED", "false").strip().lower() in {"1","true","yes","on"}
+REMINDER_ENABLED = os.getenv("DAILY_REPORT_ENABLED", "true").strip().lower() in {"1","true","yes","on"}
 
 PRIMARY = ["فارسی","ریاضی","علوم","مطالعات اجتماعی","هدیه‌های آسمان","نگارش","زبان انگلیسی"]
 MIDDLE = ["فارسی","ریاضی","علوم","مطالعات اجتماعی","عربی","پیام‌های آسمان","زبان انگلیسی"]
@@ -156,7 +156,7 @@ async def finalize_report(student, answers):
     report=_save_report(student,answers)
     status,flags=_status(student["id"],report)
     recommendations=_rule_recommendations(dict(report),flags)
-    history=[dict(r) for r in db.conn().execute("SELECT * FROM daily_reports WHERE student_id=? ORDER BY report_date DESC LIMIT 7",(student["id"],)).fetchall()]
+    hc=db.conn(); history=[dict(r) for r in hc.execute("SELECT * FROM daily_reports WHERE student_id=? ORDER BY report_date DESC LIMIT 7",(student["id"],)).fetchall()]; hc.close()
     ai_result=await _analyze_ai(student,dict(report),history)
     final_status=status
     if ai_result and ai_result.get("needs_counselor_review") and status=="normal":
@@ -274,7 +274,7 @@ async def nightly_reminder_loop(bot):
                 for s in students:
                     existing=c.execute("SELECT id FROM daily_reports WHERE student_id=? AND report_date=?",(s["id"],day)).fetchone()
                     if existing: continue
-                    cur=c.execute("INSERT OR IGNORE INTO notifications(student_id,kind,scheduled_for,payload_json) VALUES(?,?,?,?,?)",(s["id"],"daily_report_reminder",day,json.dumps({"hour":REPORT_HOUR},ensure_ascii=False)))
+                    cur=c.execute("INSERT OR IGNORE INTO notifications(student_id,kind,scheduled_for,payload_json) VALUES(?,?,?,?)",(s["id"],"daily_report_reminder",day,json.dumps({"hour":REPORT_HOUR},ensure_ascii=False)))
                     if cur.rowcount:
                         try:
                             await bot.send_message(s["telegram_id"],"🌙 وقت گزارش امروزته
