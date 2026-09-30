@@ -636,6 +636,17 @@ def lead_details(lead_id):
     c.close()
     return {"lead":lead,"contacts":contacts,"history":history}
 
+def sync_students_to_leads():
+    rows=list_students(10000)
+    created=0
+    for s in rows:
+        before=conn()
+        exists=before.execute("SELECT 1 FROM leads WHERE telegram_id=?",(s["telegram_id"],)).fetchone()
+        before.close()
+        upsert_lead_from_student(s["id"],s["referral_source"] or "")
+        if not exists: created += 1
+    return created
+
 def crm_stats():
     c=conn()
     out={}
