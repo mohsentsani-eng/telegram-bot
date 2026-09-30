@@ -505,7 +505,23 @@ async def academic_start(message,state):
         return
     await state.clear(); await state.update_data(filters=filters)
     await state.set_state(Academic.subject)
-    await message.answer("درس را انتخاب کنید:",reply_markup=nav(subjects))
+    general_by_grade = {
+        "چهارم": ["فارسی","نگارش","آموزش قرآن","هدیه‌های آسمان","علوم تجربی","مطالعات اجتماعی"],
+        "پنجم": ["فارسی","نگارش","آموزش قرآن","هدیه‌های آسمان","علوم تجربی","مطالعات اجتماعی"],
+        "ششم": ["فارسی","نگارش","آموزش قرآن","هدیه‌های آسمان","علوم تجربی","مطالعات اجتماعی"],
+        "هفتم": ["فارسی","نگارش","آموزش قرآن","پیام‌های آسمان","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی"],
+        "هشتم": ["فارسی","نگارش","آموزش قرآن","پیام‌های آسمان","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی"],
+        "نهم": ["فارسی","نگارش","آموزش قرآن","پیام‌های آسمان","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی","آمادگی دفاعی"],
+    }
+    general = [x for x in subjects if x in general_by_grade.get(s["grade"], HIGH_GENERAL.get(s["grade"], []))]
+    specialized = [x for x in subjects if x not in general]
+    sections=[]
+    if general:
+        sections.append("📘 <b>دروس عمومی</b>\n" + "، ".join(general))
+    if specialized:
+        sections.append("📕 <b>دروس اختصاصی</b>\n" + "، ".join(specialized))
+    await message.answer("\n\n".join(sections))
+    await message.answer("درس موردنظر را انتخاب کنید:",reply_markup=nav(subjects))
 
 @dp.message(Academic.subject)
 async def ac1(message:Message,state:FSMContext):
@@ -558,9 +574,17 @@ async def ac4(message:Message,state:FSMContext):
     else: f.pop("difficulty",None)
     exact=db.list_questions(f)
     if len(exact) < 10:
-        label="، ".join(str(f.get(k)) for k in ["grade","track","subject","chapter","topic","difficulty"] if f.get(k))
-        await message.answer(f"⚠️ برای انتخاب دقیق شما {len(exact)} سؤال یکتا وجود دارد؛ برای آزمون ۱۰ سؤالی حداقل ۱۰ سؤال لازم است.\n\n{label}\n\nاز پنل مدیریت → ورود CSV، سؤال‌های واقعی بیشتری برای همین انتخاب اضافه کنید.",reply_markup=nav(DIFFS))
-        return
+        # A chapter/topic may temporarily have fewer than 10 items in an older
+        # imported bank. Fall back to the same grade + track + subject so the
+        # student never gets a false "bank disabled" message.
+        broad={k:v for k,v in f.items() if k in {"grade","track","subject"} and v not in (None,"")}
+        pool=db.list_questions(broad)
+        if len(pool) >= 10:
+            exact=pool
+        else:
+            label="، ".join(str(f.get(k)) for k in ["grade","track","subject","chapter","topic","difficulty"] if f.get(k))
+            await message.answer(f"⚠️ برای «{label}» هنوز سؤال کافی در بانک ثبت نشده است.\n\nاین مورد باید از پنل مدیریت تکمیل شود.",reply_markup=nav(DIFFS))
+            return
     random.shuffle(exact); qs=exact[:10]
     s=db.get_student_by_tg(message.from_user.id)
     aid=db.start_assessment(s["id"],"academic",f.get("subject"),f.get("chapter"),f.get("topic"),message.text)
