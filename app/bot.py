@@ -1496,6 +1496,8 @@ async def quick_check_channel(cq: CallbackQuery):
             ])
         )
 
+DAILY_REPORT_TASK = register_daily_reports(dp, bot)
+
 @dp.message(F.text)
 async def menu(message:Message,state:FSMContext):
     s=db.get_student_by_tg(message.from_user.id)
@@ -1523,8 +1525,6 @@ async def menu(message:Message,state:FSMContext):
     if t=="📞 درخواست مشاوره":
         db.request_counseling(s["id"],"general","درخواست عمومی")
         return await message.answer("✅ درخواست شما ثبت شد.",reply_markup=main_menu())
-
-DAILY_REPORT_TASK = register_daily_reports(dp, bot)
 
 async def run_bot():
     # Polling is deliberately self-healing: temporary Telegram/network errors
