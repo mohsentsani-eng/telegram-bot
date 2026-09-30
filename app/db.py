@@ -179,21 +179,32 @@ def init_db():
     );
     """)
     c.commit()
-    # Question seeding is OPT-IN. The admin CSV is the source of truth by default.
-    # Set AUTO_SEED_QUESTIONS=1 only when you intentionally want bundled starter data.
-    if os.getenv("AUTO_SEED_QUESTIONS", "1").strip().lower() in {"1", "true", "yes"}:
-        try:
-            import csv as _csv
-            base_dir = Path(__file__).resolve().parent.parent / "data"
-            seed_files = [base_dir / "core_question_bank.csv", base_dir / "question_bank_coverage.csv", base_dir / "expanded_questions.csv", base_dir / "d10_humanities_questions.csv", base_dir / "seed_questions.csv"]
-            for seed_path in seed_files:
-                if not seed_path.exists():
-                    continue
-                with seed_path.open(encoding="utf-8-sig", newline="") as f:
-                    for row in _csv.DictReader(f):
-                        insert_question_if_new(row)
-        except Exception as exc:
-            print(f"[WARN] optional question seed failed: {exc}")
+    # Bundled educational bank is always ensured at startup. This is additive only:
+    # existing questions, student records and assessment history are never overwritten.
+    # The admin CSV remains additive and can extend the bank later.
+    try:
+        import csv as _csv
+        base_dir = Path(__file__).resolve().parent.parent / "data"
+        seed_files = [
+            base_dir / "core_question_bank.csv",
+            base_dir / "question_bank_coverage.csv",
+            base_dir / "expanded_questions.csv",
+            base_dir / "question_bank_completion.csv",
+            base_dir / "d10_humanities_questions.csv",
+            base_dir / "seed_questions.csv",
+        ]
+        inserted = 0
+        for seed_path in seed_files:
+            if not seed_path.exists():
+                continue
+            with seed_path.open(encoding="utf-8-sig", newline="") as f:
+                for row in _csv.DictReader(f):
+                    if insert_question_if_new(row):
+                        inserted += 1
+        if inserted:
+            print(f"[QUESTION_BANK] ensured {inserted} new bundled questions", flush=True)
+    except Exception as exc:
+        print(f"[WARN] bundled question-bank seed failed: {exc}", flush=True)
     c.close()
 
 def get_student_by_tg(tg):
