@@ -12,6 +12,16 @@ def _backup_path():
 def backup_before_migration():
     if not db.DB.exists() or db.DB.stat().st_size == 0:
         return None
+    # Only create a pre-migration backup when the target schema is not already applied.
+    try:
+        check = sqlite3.connect(db.DB)
+        row = check.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
+        check.close()
+        if (row and (row[0] or 0) >= TARGET_VERSION):
+            return None
+    except sqlite3.Error:
+        # Old database without schema_migrations: backup before first migration.
+        pass
     dest = _backup_path()
     shutil.copy2(db.DB, dest)
     print(f"[MIGRATION] database backup: {dest}", flush=True)
