@@ -368,10 +368,15 @@ async def global_main_action(message:Message,state:FSMContext):
     if t=="🧭 انتخاب رشته نهم": return await ninth_start(message,state)
     if t=="🚀 کوچینگ تحصیلی":
         db.request_counseling(s["id"],"coaching","علاقه‌مند به کوچینگ")
+        lead_id=db.upsert_lead_from_student(s["id"])
+        if lead_id: db.set_lead_status(lead_id,"interested")
         db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"coaching"})
         return await message.answer("✅ درخواست کوچینگ در CRM ثبت شد.",reply_markup=main_menu())
     if t=="👨‍👩‍👧 مشاوره والدین":
         db.request_counseling(s["id"],"parents","درخواست مشاوره والدین")
+        lead_id=db.upsert_lead_from_student(s["id"])
+        if lead_id: db.set_lead_status(lead_id,"interested")
+        db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"parents"})
         return await message.answer("✅ درخواست مشاوره والدین ثبت شد.",reply_markup=main_menu())
     if t=="📞 درخواست مشاوره":
         db.request_counseling(s["id"],"general","درخواست عمومی")
@@ -1526,6 +1531,9 @@ async def menu(message:Message,state:FSMContext):
         return await message.answer("✅ درخواست مشاوره والدین ثبت شد.",reply_markup=main_menu())
     if t=="📞 درخواست مشاوره":
         db.request_counseling(s["id"],"general","درخواست عمومی")
+        lead_id=db.upsert_lead_from_student(s["id"])
+        if lead_id: db.set_lead_status(lead_id,"interested")
+        db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"general"})
         return await message.answer("✅ درخواست شما ثبت شد.",reply_markup=main_menu())
 
 async def run_bot():
