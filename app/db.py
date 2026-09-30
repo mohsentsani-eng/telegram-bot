@@ -697,3 +697,37 @@ def counselor_kpi(days=30):
         FROM counselors c WHERE c.active=1 ORDER BY assigned DESC,c.name""",
         (f"-{max(1,int(days))-1} days",)*3).fetchall()
     c.close(); return rows
+
+
+def add_call_center_agent(name, phone="", monthly_base=2500000, commission_rate=0.05):
+    c=conn()
+    cur=c.execute("INSERT INTO call_center_agents(name,phone,monthly_base,commission_rate) VALUES(?,?,?,?)",
+                  (name.strip(),phone.strip(),float(monthly_base),float(commission_rate)))
+    c.commit(); rid=cur.lastrowid; c.close(); return rid
+
+def list_call_center_agents(active_only=True):
+    c=conn()
+    q="SELECT * FROM call_center_agents"
+    if active_only: q += " WHERE active=1"
+    rows=c.execute(q+" ORDER BY id").fetchall()
+    c.close(); return rows
+
+def log_call(lead_id, agent_id, result, effective=0, converted=0, note=""):
+    c=conn()
+    c.execute("INSERT INTO call_logs(lead_id,agent_id,result,effective,converted,note) VALUES(?,?,?,?,?,?)",
+              (lead_id,agent_id,result,int(bool(effective)),int(bool(converted)),note or ""))
+    c.commit(); c.close()
+    return add_lead_contact(lead_id,result,note)
+
+def call_center_kpi(days=30):
+    c=conn(); since=f"-{max(1,int(days))-1} days"
+    rows=c.execute("""SELECT a.id,a.name,a.monthly_base,a.commission_rate,
+        COUNT(cl.id) calls,COALESCE(SUM(cl.effective),0) effective_calls,
+        COALESCE(SUM(cl.converted),0) conversions,
+        COALESCE((SELECT SUM(r.amount) FROM registrations r WHERE r.sales_agent_id=a.id
+        AND r.status IN ('registered','paid') AND date(r.created_at)>=date('now',?)),0) revenue
+        FROM call_center_agents a
+        LEFT JOIN call_logs cl ON cl.agent_id=a.id AND date(cl.contacted_at)>=date('now',?)
+        WHERE a.active=1 GROUP BY a.id,a.name,a.monthly_base,a.commission_rate
+        ORDER BY calls DESC,a.id""",(since,since)).fetchall()
+    c.close(); return rows
