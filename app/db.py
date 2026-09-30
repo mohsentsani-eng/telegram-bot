@@ -462,6 +462,77 @@ def request_counseling(student_id, typ, note=""):
     c=conn(); c.execute("INSERT INTO counseling_requests(student_id,request_type,note) VALUES(?,?,?)",
                         (student_id,typ,note)); c.commit(); c.close()
 
+
+def upsert_goal(student_id, goal, target_value=""):
+    c=conn()
+    c.execute("UPDATE student_goals SET status='closed', updated_at=CURRENT_TIMESTAMP WHERE student_id=? AND status='active'", (student_id,))
+    cur=c.execute("INSERT INTO student_goals(student_id,goal,target_value) VALUES(?,?,?)",(student_id,goal,target_value or ""))
+    c.commit(); rid=cur.lastrowid; c.close(); return rid
+
+def active_goals(student_id, limit=10):
+    c=conn(); rows=c.execute("SELECT * FROM student_goals WHERE student_id=? AND status='active' ORDER BY id DESC LIMIT ?",(student_id,limit)).fetchall(); c.close(); return rows
+
+def add_counselor(name, telegram_id=None):
+    c=conn(); cur=c.execute("INSERT INTO counselors(name,telegram_id) VALUES(?,?)",(name,telegram_id)); c.commit(); rid=cur.lastrowid; c.close(); return rid
+
+def list_counselors(active_only=True):
+    c=conn()
+    sql="SELECT * FROM counselors"
+    if active_only: sql+=" WHERE active=1"
+    rows=c.execute(sql+" ORDER BY name").fetchall(); c.close(); return rows
+
+def assign_counselor(student_id, counselor_id):
+    c=conn()
+    c.execute("UPDATE student_counselor_assignments SET active=0 WHERE student_id=? AND active=1",(student_id,))
+    c.execute("INSERT INTO student_counselor_assignments(student_id,counselor_id,active) VALUES(?,?,1)",(student_id,counselor_id))
+    c.commit(); c.close()
+
+def active_counselor(student_id):
+    c=conn()
+    r=c.execute("""SELECT c.* FROM counselors c JOIN student_counselor_assignments a ON a.counselor_id=c.id
+                   WHERE a.student_id=? AND a.active=1 ORDER BY a.id DESC LIMIT 1""",(student_id,)).fetchone()
+    c.close(); return r
+
+def add_counselor_note(student_id, counselor_id, note):
+    c=conn(); c.execute("INSERT INTO counselor_notes(student_id,counselor_id,note) VALUES(?,?,?)",(student_id,counselor_id,note)); c.commit(); c.close()
+
+def list_counselor_notes(student_id, limit=30):
+    c=conn(); rows=c.execute("""SELECT n.*,c.name counselor_name FROM counselor_notes n
+        LEFT JOIN counselors c ON c.id=n.counselor_id WHERE n.student_id=? ORDER BY n.id DESC LIMIT ?""",(student_id,limit)).fetchall(); c.close(); return rows
+
+def create_followup(student_id, followup_type="general", priority="normal", due_at=None, note=""):
+    c=conn(); cur=c.execute("INSERT INTO followups(student_id,followup_type,priority,status,due_at,note) VALUES(?,?,?,?,?,?)",
+                            (student_id,followup_type,priority,"open",due_at,note)); c.commit(); rid=cur.lastrowid; c.close(); return rid
+
+def list_open_followups(student_id=None, limit=100):
+    c=conn()
+    if student_id is None:
+        rows=c.execute("SELECT f.*,s.first_name,s.last_name FROM followups f JOIN students s ON s.id=f.student_id WHERE f.status='open' ORDER BY f.id DESC LIMIT ?",(limit,)).fetchall()
+    else:
+        rows=c.execute("SELECT * FROM followups WHERE student_id=? AND status='open' ORDER BY id DESC LIMIT ?",(student_id,limit)).fetchall()
+    c.close(); return rows
+
+def complete_followup(followup_id):
+    c=conn(); c.execute("UPDATE followups SET status='completed',completed_at=CURRENT_TIMESTAMP WHERE id=?",(followup_id,)); c.commit(); c.close()
+
+def weekly_progress(student_id, days=7):
+    c=conn()
+    rows=c.execute("""SELECT * FROM student_progress WHERE student_id=?
+                      AND report_date >= date('now', ?)
+                      ORDER BY report_date""",(f"-{max(1,int(days))-1} days",)).fetchall()
+    c.close()
+    return rows
+
+def weekly_summary(student_id, days=7):
+    rows=weekly_progress(student_id,days)
+    if not rows: return {"days":0,"study_hours":0,"execution":0,"practice":0,"trend":"داده کافی نیست"}
+    study=sum(float(r["study_hours"] or 0) for r in rows)
+    execution=sum(float(r["plan_execution"] or 0) for r in rows)/len(rows)
+    practice=sum(int(r["practice_count"] or 0) for r in rows)
+    trends=[str(r["trend"] or "").strip() for r in rows if r["trend"]]
+    return {"days":len(rows),"study_hours":study,"execution":execution,"practice":practice,
+            "trend":trends[-1] if trends else "نیازمند پایش"}
+
 def stats():
     c=conn()
     out={}
