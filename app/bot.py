@@ -11,7 +11,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from . import db
 from . import ai
-from .daily_reports import register as register_daily_reports
 
 TOKEN=os.getenv("BOT_TOKEN")
 CHANNEL_ID=os.getenv("REQUIRED_CHANNEL_ID","@tarnoomhamdeli").strip() or "@tarnoomhamdeli"
@@ -1505,7 +1504,7 @@ async def quick_check_channel(cq: CallbackQuery):
             ])
         )
 
-DAILY_REPORT_TASK = register_daily_reports(dp, bot)
+DAILY_REPORT_TASK = None
 
 @dp.message(F.text)
 async def menu(message:Message,state:FSMContext):
