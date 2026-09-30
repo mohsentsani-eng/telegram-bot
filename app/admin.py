@@ -1064,3 +1064,52 @@ def kpi(req: Request):
     {trs or '<tr><td colspan="5">مشاوری ثبت نشده است.</td></tr>'}</table>
     """
     return page("KPI تیم",body)
+
+
+@app.get("/admin/call-center", response_class=HTMLResponse)
+def call_center_dashboard(req: Request):
+    if (g := guard(req)):
+        return g
+    s=db.call_center_summary(30)
+    rows=db.call_center_kpi(30)
+    agents=db.list_call_center_agents(False)
+    trs="".join(f"<tr><td>{esc(r['name'])}</td><td>{r['calls']}</td><td>{r['effective_calls']}</td><td>{r['conversions']}</td><td>{r['revenue']:,.0f}</td></tr>" for r in rows)
+    opts="".join(f"<option value='{a['id']}'>{esc(a['name'])}</option>" for a in agents if a['active'])
+    body=f"""
+    <h1>📞 کال‌سنتر</h1>
+    <div class="grid">
+      <div class="card">کل تماس<div class="n">{s['calls']}</div></div>
+      <div class="card">تماس مؤثر<div class="n">{s['effective_calls']}</div></div>
+      <div class="card">تبدیل<div class="n">{s['conversions']}</div></div>
+      <div class="card">درآمد ثبت‌شده<div class="n">{s['revenue']:,.0f}</div></div>
+    </div>
+    <div class="actions"><a class="btn" href="/admin/leads">📋 صف سرنخ</a><a class="btn" href="/admin/call-center/agents">👥 اعضای تیم</a></div>
+    <table><tr><th>کارشناس</th><th>تماس</th><th>مؤثر</th><th>تبدیل</th><th>درآمد مرتبط</th></tr>{trs or '<tr><td colspan="5">داده‌ای ثبت نشده است.</td></tr>'}</table>
+    """
+    return page("کال‌سنتر",body)
+
+@app.get("/admin/call-center/agents", response_class=HTMLResponse)
+def call_center_agents(req: Request):
+    if (g := guard(req)):
+        return g
+    rows=db.list_call_center_agents(False)
+    trs="".join(f"<tr><td>{r['id']}</td><td>{esc(r['name'])}</td><td>{esc(r['phone'])}</td><td>{r['monthly_base']:,.0f}</td><td>{r['commission_rate']*100:.1f}%</td><td>{'فعال' if r['active'] else 'غیرفعال'}</td></tr>" for r in rows)
+    body=f"""
+    <h1>👥 اعضای کال‌سنتر</h1>
+    <form method="post" action="/admin/call-center/agents/add" class="card">
+      <input name="name" placeholder="نام کارشناس" required>
+      <input name="phone" placeholder="تلفن">
+      <input name="monthly_base" type="number" value="2500000" min="0">
+      <input name="commission_rate" type="number" value="5" step="0.1" min="0" max="100">
+      <button>افزودن</button>
+    </form>
+    <p class="muted">پیش‌فرض: ۲۵۰۰۰۰۰۰ ریال/تومان؟ مبلغ در این سیستم بر اساس تومان ثبت می‌شود. نرخ پیش‌فرض کمیسیون ۵٪ است.</p>
+    <table><tr><th>ID</th><th>نام</th><th>تلفن</th><th>پایه ماهانه</th><th>کمیسیون</th><th>وضعیت</th></tr>{trs or '<tr><td colspan="6">اعضایی ثبت نشده‌اند.</td></tr>'}</table>
+    """
+    return page("اعضای کال‌سنتر",body)
+
+@app.post("/admin/call-center/agents/add")
+def call_center_agent_add(req: Request, name: str = Form(...), phone: str = Form(""), monthly_base: float = Form(2500000), commission_rate: float = Form(5)):
+    if (g := guard(req)): return g
+    db.add_call_center_agent(name,phone,monthly_base,commission_rate/100)
+    return RedirectResponse("/admin/call-center/agents",status_code=303)
