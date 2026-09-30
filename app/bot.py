@@ -30,24 +30,44 @@ GRADES=["چهارم","پنجم","ششم","هفتم","هشتم","نهم","دهم"
 TRACKS=["ریاضی","تجربی","انسانی","هنر","زبان"]
 DIFFS=["آسان","متوسط","سخت","تشخیصی"]
 
-# Subject maps are independent of the question-bank contents so a wrong
-# subject can never be shown merely because an old CSV row contains it.
-# Curriculum is data-driven so subjects stay aligned with the student's exact grade/track.
-CURRICULUM_PATH=os.path.join(os.path.dirname(__file__),"..","data","curriculum_map.json")
-try:
-    with open(CURRICULUM_PATH,encoding="utf-8") as _f:
-        CURRICULUM=json.load(_f)
-except Exception:
-    CURRICULUM={"elementary":{},"middle":{},"secondary":{"common_by_grade":{},"tracks":{}}}
+# Curriculum-aware subject map. The bank and menu use the same canonical names,
+# so a subject can never disappear just because an old CSV used a different label.
+PRIMARY_SUBJECTS=["آموزش قرآن","هدیه‌های آسمان","فارسی","نگارش","ریاضی","علوم تجربی","مطالعات اجتماعی"]
+SIXTH_SUBJECTS=PRIMARY_SUBJECTS+["تفکر و پژوهش","کار و فناوری"]
+MIDDLE_SUBJECTS=["آموزش قرآن","پیام‌های آسمان","فارسی","نگارش","ریاضی","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی","تفکر و سبک زندگی","فرهنگ و هنر","کار و فناوری"]
+NINTH_SUBJECTS=MIDDLE_SUBJECTS+["آمادگی دفاعی"]
+
+HIGH_GENERAL={
+    "دهم":["فارسی","نگارش","دین و زندگی","عربی","زبان انگلیسی","آمادگی دفاعی","جغرافیای ایران","تفکر و سواد رسانه‌ای","کارگاه کارآفرینی و تولید"],
+    "یازدهم":["فارسی","نگارش","دین و زندگی","عربی","زبان انگلیسی","انسان و محیط زیست","تاریخ معاصر ایران"],
+    "دوازدهم":["فارسی","نگارش","دین و زندگی","عربی","زبان انگلیسی","سلامت و بهداشت","هویت اجتماعی","مدیریت خانواده و سبک زندگی"],
+}
+TRACK_SUBJECTS={
+    "ریاضی":{
+        "دهم":["ریاضی","هندسه","فیزیک","شیمی"],
+        "یازدهم":["حسابان","هندسه","آمار و احتمال","فیزیک","شیمی"],
+        "دوازدهم":["حسابان","هندسه","ریاضیات گسسته","فیزیک","شیمی"],
+    },
+    "تجربی":{
+        "دهم":["زیست‌شناسی","شیمی","فیزیک","ریاضی"],
+        "یازدهم":["زیست‌شناسی","شیمی","فیزیک","ریاضی","زمین‌شناسی"],
+        "دوازدهم":["زیست‌شناسی","شیمی","فیزیک","ریاضی"],
+    },
+    "انسانی":{
+        "دهم":["علوم و فنون ادبی","ریاضی و آمار","تاریخ","جغرافیای ایران","جامعه‌شناسی","اقتصاد","منطق"],
+        "یازدهم":["علوم و فنون ادبی","ریاضی و آمار","تاریخ","جغرافیا","جامعه‌شناسی","روان‌شناسی","فلسفه"],
+        "دوازدهم":["علوم و فنون ادبی","ریاضی و آمار","تاریخ","جغرافیا","جامعه‌شناسی","فلسفه"],
+    },
+}
 
 def grade_subjects(grade, track=""):
-    if grade in CURRICULUM.get("elementary",{}):
-        return CURRICULUM["elementary"][grade]
-    if grade in CURRICULUM.get("middle",{}):
-        return CURRICULUM["middle"][grade]
-    common=CURRICULUM.get("secondary",{}).get("common_by_grade",{}).get(grade,[])
-    specific=CURRICULUM.get("secondary",{}).get("tracks",{}).get(track,{}).get(grade,[]) if track else []
-    return list(dict.fromkeys(common+specific))
+    if grade in {"چهارم","پنجم"}: return PRIMARY_SUBJECTS
+    if grade=="ششم": return SIXTH_SUBJECTS
+    if grade in {"هفتم","هشتم"}: return MIDDLE_SUBJECTS
+    if grade=="نهم": return NINTH_SUBJECTS
+    if grade in HIGH_GENERAL:
+        return HIGH_GENERAL[grade] + TRACK_SUBJECTS.get(track,{}).get(grade,[])
+    return HIGH_GENERAL.get(grade,[])
 
 def is_konkur_eligible_grade(grade):
     return grade in {"دوازدهم","فارغ‌التحصیل / پشت‌کنکوری"}
