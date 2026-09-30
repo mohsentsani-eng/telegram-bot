@@ -179,6 +179,10 @@ async def finalize_report(student, answers):
     if final_status in {"followup","urgent_review"}:
         c.execute("INSERT INTO followups(student_id,followup_type,priority,status,note) VALUES(?,?,?,?,?)",(student["id"],"daily_report",final_status,"open","پیگیری بر اساس گزارش روزانه"))
     c.commit(); c.close()
+    try:
+        db.save_ai_analysis(student["id"], "daily_report", "تحلیل گزارش روزانه", json.dumps(analysis, ensure_ascii=False), structured=analysis, status="completed" if ai_result else "completed_local")
+    except Exception as exc:
+        print(f"[REPORT] AI history save failed: {type(exc).__name__}: {exc}", flush=True)
     return report,analysis
 
 def _keyboard(options):
