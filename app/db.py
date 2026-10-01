@@ -219,6 +219,7 @@ def ensure_question_bank_seed():
             base_dir / "d10_humanities_questions.csv",
             base_dir / "art_math_physics_bank.csv",
             base_dir / "seed_questions.csv",
+            base_dir / "question_bank_rebuild_v1.csv",
         ]
         c = conn()
         existing = set()
