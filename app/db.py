@@ -227,8 +227,12 @@ def ensure_question_bank_seeded():
         import csv as _csv
         base_dir = Path(__file__).resolve().parent.parent / "data"
         seed_files = [
+            base_dir / "core_question_bank.csv",
+            base_dir / "question_bank_coverage.csv",
             base_dir / "expanded_questions.csv",
+            base_dir / "question_bank_completion.csv",
             base_dir / "d10_humanities_questions.csv",
+            base_dir / "art_math_physics_bank.csv",
             base_dir / "seed_questions.csv",
         ]
         inserted = 0
