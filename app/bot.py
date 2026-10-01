@@ -585,7 +585,7 @@ async def academic_start(message,state):
             "هشتم": ["فارسی","نگارش","آموزش قرآن","پیام‌های آسمان","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی"],
             "نهم": ["فارسی","نگارش","آموزش قرآن","پیام‌های آسمان","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی","آمادگی دفاعی"],
         }
-        general = [x for x in subjects if x in general_by_grade.get(grade, HIGH_GENERAL.get(grade, []))]
+        general = [x for x in subjects if x in general_by_grade.get(grade, [])]
         specialized = [x for x in subjects if x not in general]
         sections=[]
         if general:
