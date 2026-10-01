@@ -8,7 +8,6 @@ This module also contains a curriculum-aligned starter set for grades 4 and 5.
 These are original practice questions, not copied exam questions.
 """
 
-from collections import defaultdict
 import csv
 from pathlib import Path
 
@@ -20,8 +19,6 @@ SEED_FILES = (
     ROOT / "data" / "d10_humanities_questions.csv",
     ROOT / "data" / "seed_questions.csv",
 )
-
-MINIMUM = 10
 
 
 def _seed_bundled():
@@ -140,50 +137,18 @@ def _seed_grade45():
     return inserted
 
 
-def _rotate_options(row,shift):
-    opts=[row["option_a"],row["option_b"],row["option_c"],row["option_d"]]
-    idx={"A":0,"B":1,"C":2,"D":3}[row["correct_option"]]
-    shift=shift%4
-    return opts[shift:]+opts[:shift], "ABCD"[(idx-shift)%4]
-
-
-def _make_variant(row,n):
-    opts,correct=_rotate_options(row,n)
-    q=dict(row)
-    q["question"]=f"صورت تمرینی {n}: "+str(row["question"]).strip()
-    q["option_a"],q["option_b"],q["option_c"],q["option_d"]=opts
-    q["correct_option"]=correct
-    q["source"]="ترنم همدلی – بازتولید تمرینی"
-    q["source_type"]="generated_variant"
-    q["source_year"]="1405"
-    return q
-
-
-def ensure_minimum_questions(minimum=MINIMUM):
-    """Technical fallback only; real seeded questions are preferred."""
-    rows=[dict(r) for r in db.list_questions({})]
-    groups=defaultdict(list)
-    keys=("grade","track","subject","book","chapter","topic","difficulty")
-    for row in rows:
-        groups[tuple(row.get(k,"") or "" for k in keys)].append(row)
-
-    inserted=0
-    for key,bucket in groups.items():
-        if len(bucket)>=minimum:
-            continue
-        for n in range(1,minimum-len(bucket)+1):
-            try:
-                if db.insert_question_if_new(_make_variant(bucket[(n-1)%len(bucket)],n)):
-                    inserted += 1
-            except Exception as exc:
-                print(f"[QUESTION-BANK] fallback variant failed for {key}: {exc}",flush=True)
-    return inserted
-
-
 def bootstrap_question_bank():
+    """Load only real seeded questions; never manufacture filler variants.
+
+    Missing coverage is reported rather than filled with renamed/rotated copies.
+    This keeps question count honest and preserves existing student/question data.
+    """
     seeded=_seed_bundled()
     starter45=_seed_grade45()
-    variants=ensure_minimum_questions()
     total=db.count_questions({})
-    print(f"[QUESTION-BANK] ready: total={total}, bundled_added={seeded}, grade45_added={starter45}, fallback_variants={variants}, minimum={MINIMUM}",flush=True)
-    return {"total":total,"seeded":seeded,"grade45":starter45,"variants":variants}
+    print(
+        f"[QUESTION-BANK] ready: total={total}, bundled_added={seeded}, "
+        f"grade45_added={starter45}, synthetic_variants=disabled",
+        flush=True,
+    )
+    return {"total":total,"seeded":seeded,"grade45":starter45,"variants":0}
