@@ -227,9 +227,13 @@ def ensure_question_bank_seed():
         ]
         c = conn()
         existing = set()
+        existing_stems = set()
         for row in c.execute("SELECT * FROM questions WHERE active=1").fetchall():
-            existing.add(_question_key(dict(row)))
+            item = dict(row)
+            existing.add(_question_key(item))
+            existing_stems.add(_question_stem_key(item))
         pending = []
+        pending_stems = set()
         seed_stats = []
         for seed_path in seed_files:
             if not seed_path.exists():
@@ -244,11 +248,19 @@ def ensure_question_bank_seed():
                         if problems:
                             invalid_rows += 1
                             continue
+                        from .question_quality import quality_issues
+                        quality = quality_issues(q)
+                        if quality:
+                            invalid_rows += 1
+                            continue
                         key = _question_key(q)
-                        if key in existing:
+                        stem_key = _question_stem_key(q)
+                        if key in existing or stem_key in existing_stems or stem_key in pending_stems:
                             duplicate_rows += 1
                             continue
                         existing.add(key)
+                        existing_stems.add(stem_key)
+                        pending_stems.add(stem_key)
                         accepted_rows += 1
                         pending.append(tuple(q[k] for k in [
                             "grade","track","subject","book","chapter","topic","subtopic","difficulty",
@@ -476,6 +488,11 @@ def _norm(v):
 def _question_key(q):
     parts=[q.get(k, "") for k in ("grade","track","subject","book","chapter","topic","subtopic","difficulty",
                                    "question","option_a","option_b","option_c","option_d","correct_option")]
+    return "|".join(_norm(x) for x in parts)
+
+def _question_stem_key(q):
+    """Detect repeated question stems even when answer options differ."""
+    parts=[q.get(k, "") for k in ("grade","track","subject","book","chapter","topic","question")]
     return "|".join(_norm(x) for x in parts)
 
 def _matches(row, filters):
