@@ -494,9 +494,8 @@ async def show_profile(message):
 
 async def academic_start(message,state):
     if not await require_channel(message): return
-    # Self-heal the persistent Railway SQLite bank before reading subjects.
-    # This is additive only and never touches student records.
-    db.ensure_question_bank_seed()
+    # Question bank is initialized once at application startup.
+    # Avoid reseeding/scanning the entire bank on every menu click.
     s=db.get_student_by_tg(message.from_user.id)
     if not s:
         return await begin_registration(message,state)
