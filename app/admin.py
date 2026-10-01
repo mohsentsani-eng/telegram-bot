@@ -150,7 +150,7 @@ def dashboard(req: Request):
     <div class="actions">
       <a class="btn" href="/admin/marketing">📣 قیف جذب و لینک‌های کمپین</a>
       <a class="btn" href="/admin/daily-reports">🌙 گزارش روزانه و پیگیری مشاور</a>
-      <a class="btn" href="/admin/questions/cleanup">🧹 حذف تکراری‌های بانک</a>
+      <a class="btn" href="/admin/questions/cleanup">🧹 قرنطینه تکراری‌های بانک</a>
       <a class="btn" href="/admin/questions/report">📊 گزارش پوشش مباحث</a>
     </div>
     <p class="muted">ورود CSV فقط اضافه می‌کند و داده‌های دانش‌آموزان را حذف نمی‌کند. پاک‌سازی تکراری‌ها یک عملیات جدا و قابل مشاهده است.</p>
@@ -706,7 +706,7 @@ def cleanup_questions(req: Request):
     if (g := guard(req)):
         return g
     deleted = db.remove_duplicate_questions()
-    return page("پاک‌سازی بانک", f"<h1>پاک‌سازی انجام شد</h1><div class='ok'><b>{deleted}</b> سؤال تکراری حذف شد.</div><a class='btn' href='/admin/questions'>بازگشت به بانک سؤال</a>")
+    return page("قرنطینه بانک", f"<h1>قرنطینه انجام شد</h1><div class='ok'><b>{deleted}</b> سؤال تکراری از حالت فعال خارج شد؛ هیچ رکوردی حذف نشد.</div><a class='btn' href='/admin/questions'>بازگشت به بانک سؤال</a>")
 
 @app.get("/admin/questions/report", response_class=HTMLResponse)
 def question_report(req: Request):
