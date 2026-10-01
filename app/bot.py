@@ -340,6 +340,15 @@ MAIN_ACTIONS = {
     "📞 درخواست مشاوره", "🔄 ثبت‌نام مجدد", "🌙 گزارش امروز",
 }
 
+# High-priority escape hatch for the quick-assessment button.
+# This MUST be registered before the generic MAIN_ACTIONS handler: aiogram
+# stops at the first matching handler, so a generic any-state menu handler
+# can otherwise swallow this button while an FSM is active.
+@dp.message(StateFilter("*"), F.text == "🎯 ارزیابی سریع من")
+async def quick_menu_escape(message:Message,state:FSMContext):
+    await state.clear()
+    return await quick_assessment_start(message,state)
+
 @dp.message(StateFilter("*"), F.text.in_(MAIN_ACTIONS))
 async def global_main_action(message:Message,state:FSMContext):
     # Existing dedicated handlers registered earlier (notably the channel button)
