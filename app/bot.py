@@ -1432,6 +1432,11 @@ async def quick_assessment_start(message: Message, state: FSMContext):
 
 @dp.message(QuickAssessment.answering)
 async def quick_assessment_answer(message: Message, state: FSMContext):
+    # Top-level menu actions must always escape the current quick-assessment FSM.
+    # This handler is registered before the generic menu dispatcher, so without
+    # this guard buttons such as "📊 ارزیابی تحصیلی" could be treated as answers.
+    if message.text in MAIN_ACTIONS:
+        return await global_main_action(message, state)
     if message.text in {BACK,HOME}:
         await state.clear()
         return await message.answer("🏠 منوی اصلی ترنم همدلی",reply_markup=main_menu())
