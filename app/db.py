@@ -581,6 +581,28 @@ def question_coverage_audit(min_per_subject=10):
                                  "needed": max(0, min_per_subject - n)})
     return {"expected": expected, "covered": covered, "gaps": gaps, "coverage_pct": round(covered * 100 / expected, 1) if expected else 0}
 
+def question_quality_audit():
+    """Summarize active questions that fail the current non-destructive quality rules."""
+    from .question_quality import quality_issues
+    c = conn()
+    rows = c.execute("SELECT * FROM questions WHERE active=1").fetchall()
+    c.close()
+    issue_counts = {}
+    bad_ids = []
+    for r in rows:
+        issues = quality_issues(dict(r))
+        if issues:
+            bad_ids.append(int(r["id"]))
+            for issue in issues:
+                issue_counts[issue] = issue_counts.get(issue, 0) + 1
+    return {
+        "active_total": len(rows),
+        "bad_total": len(bad_ids),
+        "bad_ids": bad_ids[:100],
+        "issue_counts": issue_counts,
+        "quality_pct": round((len(rows)-len(bad_ids))*100/len(rows),1) if rows else 100.0,
+    }
+
 def question_quality_distribution():
     """Return active-bank balance metrics for correct options and difficulty."""
     c = conn()
