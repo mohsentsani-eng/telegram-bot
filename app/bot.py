@@ -496,7 +496,7 @@ async def academic_start(message,state):
     if not await require_channel(message): return
     # Self-heal the persistent Railway SQLite bank before reading subjects.
     # This is additive only and never touches student records.
-    db.ensure_question_bank_seeded()
+    db.ensure_question_bank_seed()
     s=db.get_student_by_tg(message.from_user.id)
     if not s:
         return await begin_registration(message,state)
@@ -2131,7 +2131,7 @@ async def academic_start(message,state):
     if not await require_channel(message): return
     # Self-heal the persistent Railway SQLite bank before reading subjects.
     # This is additive only and never touches student records.
-    db.ensure_question_bank_seeded()
+    db.ensure_question_bank_seed()
     s=db.get_student_by_tg(message.from_user.id)
     if not s:
         return await begin_registration(message,state)
