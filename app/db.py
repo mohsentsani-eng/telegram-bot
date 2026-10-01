@@ -581,6 +581,30 @@ def question_coverage_audit(min_per_subject=10):
                                  "needed": max(0, min_per_subject - n)})
     return {"expected": expected, "covered": covered, "gaps": gaps, "coverage_pct": round(covered * 100 / expected, 1) if expected else 0}
 
+def question_quality_distribution():
+    """Return active-bank balance metrics for correct options and difficulty."""
+    c = conn()
+    rows = c.execute(
+        "SELECT correct_option,COALESCE(difficulty,'') difficulty,COUNT(*) n "
+        "FROM questions WHERE active=1 GROUP BY correct_option,difficulty"
+    ).fetchall()
+    c.close()
+    option_counts = {x: 0 for x in "ABCD"}
+    difficulty_counts = {}
+    for r in rows:
+        opt = str(r["correct_option"] or "").upper()
+        if opt in option_counts:
+            option_counts[opt] += int(r["n"])
+        d = str(r["difficulty"] or "نامشخص")
+        difficulty_counts[d] = difficulty_counts.get(d, 0) + int(r["n"])
+    total = sum(option_counts.values())
+    return {
+        "total": total,
+        "correct_option": option_counts,
+        "difficulty": difficulty_counts,
+        "option_pct": {k: round(v * 100 / total, 1) if total else 0 for k, v in option_counts.items()},
+    }
+
 def remove_duplicate_questions():
     """Remove legacy exact duplicates while keeping the oldest record and its ID."""
     c=conn(); rows=c.execute("SELECT * FROM questions ORDER BY id ASC").fetchall()
