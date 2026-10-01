@@ -18,6 +18,7 @@ CHANNEL_URL=os.getenv("REQUIRED_CHANNEL_URL","").strip() or "https://t.me/tarnoo
 CHANNEL_USERNAME="@tarnoomhamdeli"
 BOT_USERNAME=os.getenv("BOT_USERNAME","").strip().lstrip("@")
 INSTAGRAM_URL=os.getenv("INSTAGRAM_URL","").strip() or "https://www.instagram.com/tarannomhamdeli.psy/"
+TEHRAN_TZ=ZoneInfo("Asia/Tehran")
 
 # Prevent repeated Telegram taps from generating duplicate menu responses.
 LAST_MENU_ACTION={}
@@ -96,6 +97,9 @@ class Ninth(StatesGroup):
 # AI FSM is intentionally named AIState to avoid any collision with the ai module.
 class AIState(StatesGroup):
     data_input=State(); chat=State()
+
+class DailyReport(StatesGroup):
+    study_hours=State(); plan_execution=State(); practice_count=State(); main_problem=State(); satisfaction=State(); tomorrow_goal=State()
 
 class Planner(StatesGroup):
     daily_hours=State()
@@ -368,6 +372,194 @@ async def academic_menu_escape(message:Message,state:FSMContext):
     # Minimal acknowledgement before any database/channel work.
     await message.answer("📊 ارزیابی تحصیلی — درخواست دریافت شد.")
     return await academic_start(message,state)
+
+
+def today_tehran():
+    return datetime.datetime.now(TEHRAN_TZ).date().isoformat()
+
+def _parse_number(text, minimum=0, maximum=None):
+    raw=str(text or "").strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹","0123456789")).replace(",", ".")
+    try:
+        value=float(raw)
+    except Exception:
+        return None
+    if value < minimum or (maximum is not None and value > maximum):
+        return None
+    return value
+
+def _daily_report_status(study_hours, plan_execution, practice_count, satisfaction):
+    # Objective rule-based triage only; no psychological diagnosis is inferred.
+    if plan_execution <= 20 and study_hours < 1 and practice_count == 0:
+        return "urgent_review"
+    if plan_execution < 50 or satisfaction in {"۱", "1", "۲", "2"}:
+        return "followup"
+    if plan_execution < 70 or study_hours < 2:
+        return "attention"
+    return "normal"
+
+def _daily_report_label(status):
+    return {
+        "normal":"🟢 مناسب",
+        "attention":"🟡 نیازمند توجه",
+        "followup":"🟠 نیازمند پیگیری",
+        "urgent_review":"🔴 نیازمند بررسی سریع",
+    }.get(status,status)
+
+async def daily_report_start(message:Message,state:FSMContext):
+    if not await require_channel(message):
+        return
+    s=db.get_student_by_tg(message.from_user.id)
+    if not s:
+        return await begin_registration(message,state)
+    await state.clear()
+    existing=db.get_daily_report(s["id"],today_tehran())
+    if existing:
+        await message.answer(
+            "🌙 <b>گزارش امروز</b>\n\n"
+            "گزارش امروز شما قبلاً ثبت شده است. اگر دوباره ادامه دهید، "
+            "همان گزارش امروز به‌روزرسانی می‌شود و سوابق قبلی روزهای گذشته حفظ می‌شوند.\n\n"
+            f"📅 تاریخ: {existing['report_date']}\n"
+            f"⏱️ مطالعه: {existing['study_hours'] or 0:g} ساعت\n"
+            f"📈 اجرای برنامه: {existing['plan_execution'] or 0:g}٪\n"
+            f"📝 تمرین/تست: {existing['practice_count'] or 0}",
+            reply_markup=nav(["شروع/ویرایش گزارش امروز"])
+        )
+        return
+    await state.set_state(DailyReport.study_hours)
+    await message.answer(
+        "🌙 <b>گزارش امروز</b>\n\n"
+        "کمتر از ۲ دقیقه زمان می‌برد و برای پیگیری مشاور در پرونده شما ثبت می‌شود.\n\n"
+        "۱) امروز چند ساعت مطالعه مفید داشتی؟\n"
+        "مثلاً: ۴ یا ۳٫۵",
+        reply_markup=nav([])
+    )
+
+@dp.message(F.text=="🌙 گزارش امروز")
+async def daily_report_menu_escape(message:Message,state:FSMContext):
+    now=time.monotonic(); uid=message.from_user.id
+    key=(uid,"🌙 گزارش امروز")
+    if now-LAST_MENU_ACTION.get(key,0) < MENU_DEBOUNCE_SECONDS:
+        return
+    LAST_MENU_ACTION[key]=now
+    await state.clear()
+    return await daily_report_start(message,state)
+
+@dp.message(DailyReport.study_hours)
+async def daily_report_study(message:Message,state:FSMContext):
+    if message.text in {BACK,HOME}: return await global_back(message,state)
+    value=_parse_number(message.text,0,24)
+    if value is None:
+        return await message.answer("لطفاً تعداد ساعت مطالعه را به شکل عددی بین ۰ تا ۲۴ وارد کن. مثال: ۴ یا ۳٫۵")
+    await state.update_data(study_hours=value)
+    await state.set_state(DailyReport.plan_execution)
+    await message.answer("۲) چند درصد از برنامه امروزت را اجرا کردی؟\nیک عدد بین ۰ تا ۱۰۰ وارد کن.",reply_markup=nav([]))
+
+@dp.message(DailyReport.plan_execution)
+async def daily_report_execution(message:Message,state:FSMContext):
+    if message.text in {BACK,HOME}: return await global_back(message,state)
+    value=_parse_number(message.text,0,100)
+    if value is None:
+        return await message.answer("لطفاً درصد اجرای برنامه را بین ۰ تا ۱۰۰ وارد کن. مثال: ۷۵")
+    await state.update_data(plan_execution=value)
+    await state.set_state(DailyReport.practice_count)
+    await message.answer("۳) امروز چند تست/تمرین انجام دادی؟\nاگر نداشتی ۰ وارد کن.",reply_markup=nav([]))
+
+@dp.message(DailyReport.practice_count)
+async def daily_report_practice(message:Message,state:FSMContext):
+    if message.text in {BACK,HOME}: return await global_back(message,state)
+    value=_parse_number(message.text,0,10000)
+    if value is None or value != int(value):
+        return await message.answer("لطفاً تعداد تست/تمرین را به صورت عدد صحیح وارد کن. مثال: ۴۰")
+    await state.update_data(practice_count=int(value))
+    await state.set_state(DailyReport.main_problem)
+    await message.answer("۴) مهم‌ترین مشکل امروزت چه بود؟\nاگر مشکل خاصی نداشتی بنویس: نداشتم",reply_markup=nav([]))
+
+@dp.message(DailyReport.main_problem)
+async def daily_report_problem(message:Message,state:FSMContext):
+    if message.text in {BACK,HOME}: return await global_back(message,state)
+    value=(message.text or "").strip()[:1000]
+    if not value: return await message.answer("لطفاً یک پاسخ کوتاه وارد کن.")
+    await state.update_data(main_problem=value)
+    await state.set_state(DailyReport.satisfaction)
+    await message.answer("۵) از عملکرد امروزت چقدر راضی بودی؟",reply_markup=nav(["۱","۲","۳","۴","۵"]))
+
+@dp.message(DailyReport.satisfaction)
+async def daily_report_satisfaction(message:Message,state:FSMContext):
+    if message.text in {BACK,HOME}: return await global_back(message,state)
+    if message.text not in {"۱","۲","۳","۴","۵","1","2","3","4","5"}:
+        return await message.answer("لطفاً یکی از گزینه‌های ۱ تا ۵ را انتخاب کن.",reply_markup=nav(["۱","۲","۳","۴","۵"]))
+    await state.update_data(satisfaction=message.text)
+    await state.set_state(DailyReport.tomorrow_goal)
+    await message.answer("۶) مهم‌ترین هدف تو برای فردا چیست؟",reply_markup=nav([]))
+
+@dp.message(DailyReport.tomorrow_goal)
+async def daily_report_finish(message:Message,state:FSMContext):
+    if message.text in {BACK,HOME}: return await global_back(message,state)
+    goal=(message.text or "").strip()[:1000]
+    if not goal: return await message.answer("لطفاً هدف فردا را وارد کن.")
+    data=await state.get_data()
+    s=db.get_student_by_tg(message.from_user.id)
+    if not s:
+        await state.clear()
+        return await begin_registration(message,state)
+    date=today_tehran()
+    satisfaction=str(data.get("satisfaction","")).translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹","0123456789"))
+    status=_daily_report_status(float(data["study_hours"]),float(data["plan_execution"]),int(data["practice_count"]),satisfaction)
+    answers={
+        "study_hours":data["study_hours"],
+        "plan_execution":data["plan_execution"],
+        "practice_count":data["practice_count"],
+        "main_problem":data["main_problem"],
+        "satisfaction":satisfaction,
+        "tomorrow_goal":goal,
+    }
+    report_id=db.save_daily_report(
+        s["id"],date,data["study_hours"],data["plan_execution"],[],
+        data["practice_count"],data["main_problem"],satisfaction,goal,
+        answers=answers,status=status,analysis_status="completed",
+        analysis_json={"engine":"rule_engine","status":status}
+    )
+    # CRM: every completed daily report is attributable to the student's lead,
+    # while only flagged reports move the lead into active follow-up.
+    lead_id=db.upsert_lead_from_student(s["id"],s["referral_source"] or "")
+    db.track_referral_event(
+        message.from_user.id,"daily_report_complete",db.first_referral_source(message.from_user.id),
+        s["id"],{"report_id":report_id,"status":status,"date":date}
+    )
+    recommendations=[]
+    if float(data["study_hours"]) < 2:
+        recommendations.append("برای فردا یک بازه مطالعه مشخص و واقع‌بینانه تعیین کن.")
+    if float(data["plan_execution"]) < 70:
+        recommendations.append("برنامه فردا را کوتاه‌تر و اولویت‌بندی‌شده‌تر تنظیم کن.")
+    if int(data["practice_count"]) == 0:
+        recommendations.append("حداقل یک مجموعه کوتاه تست/تمرین را در برنامه فردا قرار بده.")
+    if goal:
+        recommendations.append("هدف فردا را به یک خروجی قابل اندازه‌گیری تبدیل کن.")
+    for n,rec in enumerate(recommendations,1):
+        db.save_ai_recommendation(s["id"],report_id,rec,n,"rule_engine")
+    if status in {"followup","urgent_review"}:
+        reason=("اجرای برنامه/عملکرد روزانه نیازمند پیگیری است: "
+                f"اجرای برنامه {float(data['plan_execution']):.0f}٪، مطالعه {float(data['study_hours']):.1f} ساعت.")
+        if not db.open_flag_exists(s["id"],"daily_performance"):
+            db.save_ai_flag(s["id"],report_id,"daily_performance",status,reason)
+        if not db.open_followup_exists(s["id"],"daily_report_followup"):
+            db.create_followup(s["id"],"daily_report_followup","high" if status=="urgent_review" else "normal",None,reason)
+        if lead_id:
+            db.set_lead_status(lead_id,"followup")
+    await state.clear()
+    label=_daily_report_label(status)
+    rec_text="\n".join(f"• {x}" for x in recommendations[:3]) or "• برای فردا یک هدف مشخص تعیین کن."
+    await message.answer(
+        "✅ <b>گزارش امروز ثبت شد.</b>\n\n"
+        f"📅 {date}\n"
+        f"⏱️ مطالعه مفید: {float(data['study_hours']):.1f} ساعت\n"
+        f"📈 اجرای برنامه: {float(data['plan_execution']):.0f}٪\n"
+        f"📝 تست/تمرین: {int(data['practice_count'])}\n"
+        f"📊 وضعیت پیگیری: {label}\n\n"
+        "🎯 <b>پیشنهادهای فردا</b>\n"+rec_text+
+        "\n\n🗂️ گزارش در پرونده آموزشی و CRM ثبت شد.",
+        reply_markup=main_menu()
+    )
 
 @dp.message(StateFilter("*"), F.text.in_(MAIN_ACTIONS))
 async def global_main_action(message:Message,state:FSMContext):
