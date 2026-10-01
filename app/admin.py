@@ -715,8 +715,12 @@ def question_report(req: Request):
     c=db.conn()
     rows=c.execute("SELECT grade,COALESCE(track,'') track,subject,COALESCE(chapter,'') chapter,COALESCE(topic,'') topic,COALESCE(difficulty,'') difficulty,COUNT(*) n FROM questions WHERE active=1 GROUP BY grade,track,subject,chapter,topic,difficulty ORDER BY grade,track,subject,chapter,topic,difficulty").fetchall()
     c.close()
+    audit=db.question_coverage_audit(10)
     trs="".join(f"<tr><td>{esc(r['grade'])}</td><td>{esc(r['track'])}</td><td>{esc(r['subject'])}</td><td>{esc(r['chapter'])}</td><td>{esc(r['topic'])}</td><td>{esc(r['difficulty'])}</td><td>{r['n']}</td></tr>" for r in rows)
-    body="<h1>گزارش پوشش بانک سؤال</h1><p class='muted'>ترکیب‌هایی که کمتر از ۱۰ سؤال دارند باید تکمیل شوند.</p><table><tr><th>پایه</th><th>رشته</th><th>درس</th><th>فصل</th><th>مبحث</th><th>سطح</th><th>تعداد</th></tr>"+trs+"</table>"
+    gaps="".join(f"<tr><td>{esc(g['grade'])}</td><td>{esc(g['track'])}</td><td>{esc(g['subject'])}</td><td>{g['count']}</td><td>{g['needed']}</td></tr>" for g in audit["gaps"])
+    summary=f"<p><b>پوشش حداقل ۱۰ سؤال برای هر درس:</b> {audit['covered']} از {audit['expected']} ({audit['coverage_pct']}٪)</p>"
+    gap_table="<h2>موارد نیازمند تکمیل</h2><table><tr><th>پایه</th><th>رشته</th><th>درس</th><th>موجود</th><th>نیاز</th></tr>"+gaps+"</table>"
+    body="<h1>گزارش پوشش بانک سؤال</h1>"+summary+gap_table+"<h2>جزئیات فصل/مبحث</h2><table><tr><th>پایه</th><th>رشته</th><th>درس</th><th>فصل</th><th>مبحث</th><th>سطح</th><th>تعداد</th></tr>"+trs+"</table>"
     return page("گزارش پوشش", body)
 
 @app.get("/admin/requests", response_class=HTMLResponse)
