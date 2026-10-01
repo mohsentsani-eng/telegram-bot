@@ -183,8 +183,8 @@ def init_db():
     ensure_question_bank_seed()
 
 def ensure_question_bank_seed():
-    """Ensure the bundled educational bank exists in the persistent DB.
-    Additive only: it never deletes, overwrites, or resets questions/students.
+    """Seed bundled question banks additively and efficiently.
+    Existing students/questions are never deleted or overwritten.
     """
     try:
         import csv as _csv
@@ -193,6 +193,7 @@ def ensure_question_bank_seed():
             base_dir / "core_question_bank.csv",
             base_dir / "question_bank_coverage.csv",
             base_dir / "expanded_questions.csv",
+            base_dir / "question_bank_completion.csv",
             base_dir / "question_bank_چهارم_min10.csv",
             base_dir / "question_bank_پنجم_min10.csv",
             base_dir / "question_bank_ششم_min10.csv",
@@ -202,62 +203,53 @@ def ensure_question_bank_seed():
             base_dir / "question_bank_دهم_min10.csv",
             base_dir / "question_bank_یازدهم_min10.csv",
             base_dir / "question_bank_دوازدهم_min10.csv",
-            base_dir / "question_bank_completion.csv",
             base_dir / "d10_humanities_questions.csv",
             base_dir / "art_math_physics_bank.csv",
             base_dir / "seed_questions.csv",
         ]
-        inserted = 0
+        c = conn()
+        existing = set()
+        for row in c.execute("SELECT * FROM questions WHERE active=1").fetchall():
+            existing.add(_question_key(dict(row)))
+        pending = []
         for seed_path in seed_files:
             if not seed_path.exists():
                 continue
             with seed_path.open(encoding="utf-8-sig", newline="") as f:
                 for row in _csv.DictReader(f):
                     try:
-                        if insert_question_if_new(row):
-                            inserted += 1
+                        q = _clean_question_payload(row)
+                        problems = _validate_question(q)
+                        if problems:
+                            continue
+                        key = _question_key(q)
+                        if key in existing:
+                            continue
+                        existing.add(key)
+                        pending.append(tuple(q[k] for k in [
+                            "grade","track","subject","book","chapter","topic","subtopic","difficulty",
+                            "question","option_a","option_b","option_c","option_d","correct_option",
+                            "explanation","source","source_type","source_year"
+                        ]))
                     except Exception as exc:
                         print(f"[WARN] question row skipped ({seed_path.name}): {exc}", flush=True)
-        if inserted:
-            print(f"[QUESTION_BANK] inserted {inserted} bundled questions", flush=True)
-        return inserted
+        if pending:
+            c.executemany(
+                """INSERT INTO questions
+                (grade,track,subject,book,chapter,topic,subtopic,difficulty,question,
+                 option_a,option_b,option_c,option_d,correct_option,explanation,source,source_type,source_year)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                pending
+            )
+            c.commit()
+        else:
+            c.rollback()
+        c.close()
+        if pending:
+            print(f"[QUESTION_BANK] inserted {len(pending)} bundled questions", flush=True)
+        return len(pending)
     except Exception as exc:
         print(f"[WARN] question-bank seed failed: {exc}", flush=True)
-        return 0
-    c.close()
-
-
-def ensure_question_bank_seeded():
-    """Idempotently load bundled question-bank CSVs into the live SQLite DB.
-    This is a safety net for Railway volumes created before AUTO_SEED_QUESTIONS
-    was configured; it never deletes or overwrites existing questions or students.
-    """
-    try:
-        import csv as _csv
-        base_dir = Path(__file__).resolve().parent.parent / "data"
-        seed_files = [
-            base_dir / "core_question_bank.csv",
-            base_dir / "question_bank_coverage.csv",
-            base_dir / "expanded_questions.csv",
-            base_dir / "question_bank_completion.csv",
-            base_dir / "d10_humanities_questions.csv",
-            base_dir / "art_math_physics_bank.csv",
-            base_dir / "seed_questions.csv",
-        ]
-        inserted = 0
-        for seed_path in seed_files:
-            if not seed_path.exists():
-                continue
-            with seed_path.open(encoding="utf-8-sig", newline="") as f:
-                for row in _csv.DictReader(f):
-                    try:
-                        if insert_question_if_new(row):
-                            inserted += 1
-                    except Exception as exc:
-                        print(f"[WARN] question seed row skipped: {exc}")
-        return inserted
-    except Exception as exc:
-        print(f"[WARN] question-bank recovery seed failed: {exc}")
         return 0
 
 def get_student_by_tg(tg):
