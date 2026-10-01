@@ -1668,7 +1668,7 @@ async def run_bot():
                 me=await bot.get_me()
                 global BOT_USERNAME
                 BOT_USERNAME=(me.username or "").strip().lstrip("@")
-                print(f"[BOT] connected as @{me.username or me.id}",flush=True)
+                print(f"[BOT] connected as @{me.username or me.id} build={os.getenv("APP_BUILD_MARKER","unknown")}",flush=True)
                 await dp.start_polling(bot, handle_signals=False)
                 delay=5
             except asyncio.CancelledError:
