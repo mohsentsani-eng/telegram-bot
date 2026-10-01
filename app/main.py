@@ -10,6 +10,7 @@ from .db import init_db
 from .migrations import backup_before_migration, migrate
 from .admin import app
 from .bot import run_bot
+from .question_bank import bootstrap_question_bank
 
 
 def _find_available_port(host: str, preferred: int, attempts: int = 20) -> int:
@@ -36,6 +37,10 @@ async def main():
     backup_before_migration()
     init_db()
     migrate()
+    # The question bank is independent from student data. It is seeded and
+    # validated at startup so an old Railway SQLite volume cannot leave the
+    # educational assessment menu empty.
+    bootstrap_question_bank()
 
     host = os.getenv("ADMIN_HOST", "0.0.0.0").strip() or "0.0.0.0"
     try:
