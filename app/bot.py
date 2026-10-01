@@ -121,9 +121,14 @@ async def channel_ok(user_id):
     if not CHANNEL_ID:
         return True
     try:
-        m=await bot.get_chat_member(CHANNEL_ID,user_id)
+        # Membership checks must never make a menu button appear frozen.
+        # Telegram guarantees getChatMember for other users when the bot is an
+        # administrator in the channel; on any network/permission problem we
+        # fail closed after a short timeout instead of blocking the handler.
+        m=await asyncio.wait_for(bot.get_chat_member(CHANNEL_ID,user_id), timeout=5)
         return m.status in {"member","administrator","creator"}
-    except Exception:
+    except Exception as exc:
+        print(f"[CHANNEL] membership check failed: {type(exc).__name__}: {exc}",flush=True)
         return False
 
 async def require_channel(message):
@@ -493,13 +498,23 @@ async def show_profile(message):
         f"نقاط نیازمند توجه: {weak_txt}",reply_markup=main_menu())
 
 async def academic_start(message,state):
-    if not await require_channel(message): return
-    # Question bank is initialized once at application startup.
-    # Avoid reseeding/scanning the entire bank on every menu click.
-    s=db.get_student_by_tg(message.from_user.id)
-    if not s:
-        return await begin_registration(message,state)
-    filters={"grade":str(s["grade"]).strip()}
+    # Always acknowledge the tap first. The persistent Railway database may
+    # contain legacy question rows, so preparation can take a moment.
+    try:
+        await message.answer("⏳ ارزیابی تحصیلی در حال آماده‌سازی است...")
+    except Exception as exc:
+        print(f"[ACADEMIC] initial response failed: {type(exc).__name__}: {exc}",flush=True)
+        return
+
+    try:
+        if not await require_channel(message):
+            return
+        # Question bank is initialized once at application startup.
+        # Avoid reseeding/scanning the entire bank on every menu click.
+        s=db.get_student_by_tg(message.from_user.id)
+        if not s:
+            return await begin_registration(message,state)
+        filters={"grade":str(s["grade"]).strip()}
     if s["track"]: filters["track"]=str(s["track"]).strip()
     allowed=grade_subjects(s["grade"], s["track"])
     bank_subjects=db.distinct_question_field("subject",filters)
@@ -539,8 +554,16 @@ async def academic_start(message,state):
         sections.append("📘 <b>دروس عمومی</b>\n" + "، ".join(general))
     if specialized:
         sections.append("📕 <b>دروس اختصاصی</b>\n" + "، ".join(specialized))
-    await message.answer("\n\n".join(sections))
-    await message.answer("درس موردنظر را انتخاب کنید:",reply_markup=nav(subjects))
+        await message.answer("\n\n".join(sections))
+        await message.answer("درس موردنظر را انتخاب کنید:",reply_markup=nav(subjects))
+    except Exception as exc:
+        print(f"[ACADEMIC] start failed: {type(exc).__name__}: {exc}",flush=True)
+        await state.clear()
+        await message.answer(
+            "⚠️ در آماده‌سازی ارزیابی تحصیلی مشکلی پیش آمد.\n"
+            "اطلاعات دانش‌آموز شما حفظ شده است. لطفاً چند ثانیه بعد دوباره «📊 ارزیابی تحصیلی» را بزنید.",
+            reply_markup=main_menu()
+        )
 
 @dp.message(Academic.subject)
 async def ac1(message:Message,state:FSMContext):
