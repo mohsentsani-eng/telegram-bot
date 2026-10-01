@@ -650,7 +650,7 @@ async def answer(cq:CallbackQuery,state:FSMContext):
         db.finish_assessment(d["aid"],score)
         db.update_student(cq.from_user.id,points=s["points"]+10)
         await state.clear()
-        await cq.message.answer(f"🏁 آزمون تمام شد.\nنمره: {score:.0f}٪\nنتیجه در پرونده شما ذخیره شد.\n\nاگر بخواهید، Gemini می‌تواند همین نتیجه را تحلیل کند.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🤖 تحلیل همین آزمون", callback_data=f"ai_assessment:{d["aid"]}")],[InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="ai:home")]]))
+        await cq.message.answer(f"🏁 آزمون تمام شد.\nنمره: {score:.0f}٪\nنتیجه در پرونده شما ذخیره شد.\n\nاگر بخواهید، Gemini می‌تواند همین نتیجه را تحلیل کند.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🤖 تحلیل همین آزمون", callback_data=f"ai_assessment:{d['aid']}")],[InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="ai:home")]]))
     else:
         await state.update_data(**d)
         await send_question(cq.message,state)
@@ -2285,7 +2285,7 @@ async def answer(cq:CallbackQuery,state:FSMContext):
         db.finish_assessment(d["aid"],score)
         db.update_student(cq.from_user.id,points=s["points"]+10)
         await state.clear()
-        await cq.message.answer(f"🏁 آزمون تمام شد.\nنمره: {score:.0f}٪\nنتیجه در پرونده شما ذخیره شد.\n\nاگر بخواهید، Gemini می‌تواند همین نتیجه را تحلیل کند.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🤖 تحلیل همین آزمون", callback_data=f"ai_assessment:{d["aid"]}")],[InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="ai:home")]]))
+        await cq.message.answer(f"🏁 آزمون تمام شد.\nنمره: {score:.0f}٪\nنتیجه در پرونده شما ذخیره شد.\n\nاگر بخواهید، Gemini می‌تواند همین نتیجه را تحلیل کند.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🤖 تحلیل همین آزمون", callback_data=f"ai_assessment:{d['aid']}")],[InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="ai:home")]]))
     else:
         await state.update_data(**d)
         await send_question(cq.message,state)
