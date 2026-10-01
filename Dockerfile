@@ -8,4 +8,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+ENV APP_BUILD_MARKER="2026-10-01-academic-fix-2"
 CMD ["python", "-m", "app.main"]
