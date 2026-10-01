@@ -356,7 +356,7 @@ async def quick_menu_escape(message:Message,state:FSMContext):
 
 # Dedicated academic-assessment escape hatch. Keep this ahead of the generic
 # MAIN_ACTIONS handler so an active FSM state can never swallow the academic button.
-@dp.message(StateFilter("*"), F.text == "📊 ارزیابی تحصیلی")
+@dp.message(F.text == "📊 ارزیابی تحصیلی")
 async def academic_menu_escape(message:Message,state:FSMContext):
     now=time.monotonic()
     uid=message.from_user.id
