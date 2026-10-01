@@ -354,6 +354,19 @@ async def quick_menu_escape(message:Message,state:FSMContext):
     await state.clear()
     return await quick_assessment_start(message,state)
 
+# Dedicated academic-assessment escape hatch. Keep this ahead of the generic
+# MAIN_ACTIONS handler so an active FSM state can never swallow the academic button.
+@dp.message(StateFilter("*"), F.text == "📊 ارزیابی تحصیلی")
+async def academic_menu_escape(message:Message,state:FSMContext):
+    now=time.monotonic()
+    uid=message.from_user.id
+    key=(uid,"📊 ارزیابی تحصیلی")
+    if now-LAST_MENU_ACTION.get(key,0) < MENU_DEBOUNCE_SECONDS:
+        return
+    LAST_MENU_ACTION[key]=now
+    await state.clear()
+    return await academic_start(message,state)
+
 @dp.message(StateFilter("*"), F.text.in_(MAIN_ACTIONS))
 async def global_main_action(message:Message,state:FSMContext):
     # Existing dedicated handlers registered earlier (notably the channel button)
