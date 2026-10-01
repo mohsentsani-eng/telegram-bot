@@ -487,17 +487,31 @@ async def academic_start(message,state):
     if not await require_channel(message): return
     # Self-heal the persistent Railway SQLite bank before reading subjects.
     # This is additive only and never touches student records.
-    db.ensure_question_bank_seed()
+    db.ensure_question_bank_seeded()
     s=db.get_student_by_tg(message.from_user.id)
-    filters={"grade":s["grade"]}
-    if s["track"]: filters["track"]=s["track"]
+    if not s:
+        return await begin_registration(message,state)
+    filters={"grade":str(s["grade"]).strip()}
+    if s["track"]: filters["track"]=str(s["track"]).strip()
     allowed=grade_subjects(s["grade"], s["track"])
     bank_subjects=db.distinct_question_field("subject",filters)
-    subjects=[x for x in allowed if x in bank_subjects]
+    # Match canonical catalog names against legacy CSV spellings as well.
+    aliases={
+        "انگلیسی":"زبان انگلیسی",
+        "علوم":"علوم تجربی",
+        "قرآن":"آموزش قرآن",
+        "جامعه شناسی":"جامعه‌شناسی",
+    }
+    subjects=[]
+    for canonical in allowed:
+        candidates=[canonical, aliases.get(canonical)]
+        if any(c and any(db._norm(c)==db._norm(b) for b in bank_subjects) for c in candidates):
+            subjects.append(canonical)
     if not subjects:
         await message.answer(
             f"⚠️ برای پایه {s['grade']} و رشته {s['track'] or 'عمومی'} هنوز سؤال فعال در بانک پیدا نشد.\n\n"
-            "درس‌های نمایش‌داده‌شده در این بخش فقط باید متناسب با پایه شما باشند.",
+            f"تعداد سؤال فعال برای این پایه/رشته: {db.count_questions(filters)}\n\n"
+            "درس‌های نمایش‌داده‌شده در این بخش فقط باید متناسب با پایه و رشته شما باشند.",
             reply_markup=nav([]))
         return
     await state.clear(); await state.update_data(filters=filters)
