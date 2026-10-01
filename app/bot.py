@@ -521,21 +521,27 @@ async def academic_start(message,state):
         print(f"[ACADEMIC] initial response failed: {type(exc).__name__}: {exc}",flush=True)
         return
 
+    stage="channel_check"
     try:
         if not await require_channel(message):
             return
 
-        # Question bank is initialized once at application startup.
-        # Avoid reseeding/scanning the entire bank on every menu click.
+        stage="student_lookup"
         s=db.get_student_by_tg(message.from_user.id)
         if not s:
             return await begin_registration(message,state)
 
-        filters={"grade":str(s["grade"]).strip()}
-        if s["track"]:
-            filters["track"]=str(s["track"]).strip()
+        stage="build_filters"
+        grade=str(s["grade"] or "").strip()
+        track=str(s["track"] or "").strip()
+        filters={"grade":grade}
+        if track:
+            filters["track"]=track
 
-        allowed=grade_subjects(s["grade"], s["track"])
+        stage="catalog"
+        allowed=grade_subjects(grade, track)
+
+        stage="question_bank"
         bank_subjects=db.distinct_question_field("subject",filters)
 
         # Match canonical catalog names against legacy CSV spellings as well.
@@ -548,18 +554,25 @@ async def academic_start(message,state):
         subjects=[]
         for canonical in allowed:
             candidates=[canonical, aliases.get(canonical)]
-            if any(c and any(db._norm(c)==db._norm(b) for b in bank_subjects) for c in candidates):
+            if any(c and any(db._norm(c)==db._norm(b) for b in candidates) for c in candidates for b in bank_subjects):
                 subjects.append(canonical)
 
+        # If the catalog is unavailable/incomplete, fall back to the actual
+        # active bank for this student's grade/track instead of failing.
         if not subjects:
+            subjects=list(bank_subjects)
+
+        if not subjects:
+            stage="empty_bank"
             await message.answer(
-                f"⚠️ برای پایه {s['grade']} و رشته {s['track'] or 'عمومی'} هنوز سؤال فعال در بانک پیدا نشد.\n\n"
+                f"⚠️ برای پایه {grade} و رشته {track or 'عمومی'} هنوز سؤال فعال در بانک پیدا نشد.\n\n"
                 f"تعداد سؤال فعال برای این پایه/رشته: {db.count_questions(filters)}\n\n"
-                "درس‌های نمایش‌داده‌شده در این بخش فقط باید متناسب با پایه و رشته شما باشند.",
+                "اطلاعات دانش‌آموز شما حفظ شده است.",
                 reply_markup=nav([])
             )
             return
 
+        stage="state_setup"
         await state.clear()
         await state.update_data(filters=filters)
         await state.set_state(Academic.subject)
@@ -572,7 +585,7 @@ async def academic_start(message,state):
             "هشتم": ["فارسی","نگارش","آموزش قرآن","پیام‌های آسمان","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی"],
             "نهم": ["فارسی","نگارش","آموزش قرآن","پیام‌های آسمان","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی","آمادگی دفاعی"],
         }
-        general = [x for x in subjects if x in general_by_grade.get(s["grade"], HIGH_GENERAL.get(s["grade"], []))]
+        general = [x for x in subjects if x in general_by_grade.get(grade, HIGH_GENERAL.get(grade, []))]
         specialized = [x for x in subjects if x not in general]
         sections=[]
         if general:
@@ -580,14 +593,18 @@ async def academic_start(message,state):
         if specialized:
             sections.append("📕 <b>دروس اختصاصی</b>\n" + "، ".join(specialized))
 
+        stage="menu_render"
         await message.answer("\n\n".join(sections))
         await message.answer("درس موردنظر را انتخاب کنید:",reply_markup=nav(subjects))
     except Exception as exc:
-        print(f"[ACADEMIC] start failed: {type(exc).__name__}: {exc}",flush=True)
+        print(f"[ACADEMIC] start failed stage={stage}: {type(exc).__name__}: {exc}",flush=True)
         await state.clear()
+        # Temporary diagnostic detail for the owner/tester; this is deliberately
+        # limited to the exception class and stage, never student data.
         await message.answer(
-            "⚠️ در آماده‌سازی ارزیابی تحصیلی مشکلی پیش آمد.\n"
-            "اطلاعات دانش‌آموز شما حفظ شده است. لطفاً چند ثانیه بعد دوباره «📊 ارزیابی تحصیلی» را بزنید.",
+            f"⚠️ خطای فنی در مرحله «{stage}» رخ داد.\n"
+            f"کد خطا: {type(exc).__name__}\n\n"
+            "اطلاعات دانش‌آموز شما حفظ شده است. این گزارش موقت برای عیب‌یابی است.",
             reply_markup=main_menu()
         )
 
