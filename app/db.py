@@ -217,6 +217,36 @@ def ensure_question_bank_seed():
         return 0
     c.close()
 
+
+def ensure_question_bank_seeded():
+    """Idempotently load bundled question-bank CSVs into the live SQLite DB.
+    This is a safety net for Railway volumes created before AUTO_SEED_QUESTIONS
+    was configured; it never deletes or overwrites existing questions or students.
+    """
+    try:
+        import csv as _csv
+        base_dir = Path(__file__).resolve().parent.parent / "data"
+        seed_files = [
+            base_dir / "expanded_questions.csv",
+            base_dir / "d10_humanities_questions.csv",
+            base_dir / "seed_questions.csv",
+        ]
+        inserted = 0
+        for seed_path in seed_files:
+            if not seed_path.exists():
+                continue
+            with seed_path.open(encoding="utf-8-sig", newline="") as f:
+                for row in _csv.DictReader(f):
+                    try:
+                        if insert_question_if_new(row):
+                            inserted += 1
+                    except Exception as exc:
+                        print(f"[WARN] question seed row skipped: {exc}")
+        return inserted
+    except Exception as exc:
+        print(f"[WARN] question-bank recovery seed failed: {exc}")
+        return 0
+
 def get_student_by_tg(tg):
     c=conn(); r=c.execute("SELECT * FROM students WHERE telegram_id=?", (tg,)).fetchone(); c.close(); return r
 
