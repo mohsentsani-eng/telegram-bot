@@ -246,7 +246,7 @@ async def begin_registration(message:Message,state:FSMContext, referral="", rene
 
 # این هندلر عمداً قبل از تمام State Handlerها قرار گرفته تا «بازگشت» و «منوی اصلی»
 # در هر مرحله‌ای از ثبت‌نام یا آزمون، واقعاً کار کنند.
-@dp.message(StateFilter("*"), F.text == HOME)
+@dp.message(F.text == HOME)
 async def global_home(message:Message,state:FSMContext):
     await state.clear()
     await message.answer("🏠 منوی اصلی ترنم همدلی", reply_markup=main_menu())
