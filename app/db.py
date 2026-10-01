@@ -220,6 +220,7 @@ def ensure_question_bank_seed():
             base_dir / "art_math_physics_bank.csv",
             base_dir / "seed_questions.csv",
             base_dir / "question_bank_rebuild_v1.csv",
+            base_dir / "question_bank_rebuild_v2.csv",
             base_dir / "question_bank_rebuild_v2_clean.csv",
             base_dir / "question_bank_rebuild_v3.csv",
         ]
