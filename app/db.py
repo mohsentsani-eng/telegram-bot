@@ -193,6 +193,7 @@ def ensure_question_bank_seed():
             base_dir / "core_question_bank.csv",
             base_dir / "question_bank_coverage.csv",
             base_dir / "expanded_questions.csv",
+            base_dir / "question_bank_expansion.csv",
             base_dir / "question_bank_completion.csv",
             base_dir / "question_bank_چهارم_min10.csv",
             base_dir / "question_bank_پنجم_min10.csv",
