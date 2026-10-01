@@ -178,6 +178,18 @@ def init_db():
         FOREIGN KEY(student_id) REFERENCES students(id)
     );
     """)
+    # Performance indexes for academic-assessment lookups.
+    # These are additive only and never delete or overwrite student/question data.
+    c.executescript("""
+    CREATE INDEX IF NOT EXISTS idx_questions_active_grade_track
+        ON questions(active, grade, track);
+    CREATE INDEX IF NOT EXISTS idx_questions_active_subject
+        ON questions(active, subject);
+    CREATE INDEX IF NOT EXISTS idx_questions_active_chapter_topic
+        ON questions(active, chapter, topic);
+    CREATE INDEX IF NOT EXISTS idx_questions_active_difficulty
+        ON questions(active, difficulty);
+    """)
     c.commit()
     c.close()
     ensure_question_bank_seed()
@@ -422,8 +434,23 @@ def _matches(row, filters):
 def list_questions(filters=None):
     filters=filters or {}
     c=conn()
-    rows=c.execute("SELECT * FROM questions WHERE active=1 ORDER BY id DESC").fetchall()
+
+    # Push exact filters into SQLite first. This is important on the persistent
+    # Railway database, where legacy imports may contain many duplicate rows.
+    # We still run _matches() below, so normalization/legacy aliases keep the
+    # same behavior as before.
+    clauses=["active=1"]
+    params=[]
+    for k in ("grade","track","subject","book","chapter","topic","difficulty"):
+        v=filters.get(k)
+        if v not in (None, ""):
+            clauses.append(f"{k}=?")
+            params.append(str(v))
+
+    sql="SELECT * FROM questions WHERE " + " AND ".join(clauses) + " ORDER BY id DESC"
+    rows=c.execute(sql, tuple(params)).fetchall()
     c.close()
+
     # De-duplicate at read time too, so legacy duplicated imports can never appear in an exam.
     out=[]; seen=set()
     for r in rows:
