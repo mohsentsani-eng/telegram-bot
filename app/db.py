@@ -261,10 +261,43 @@ def ensure_question_bank_seed():
         c.close()
         if pending:
             print(f"[QUESTION_BANK] inserted {len(pending)} bundled questions", flush=True)
+        quarantine_obvious_bad_questions()
         return len(pending)
     except Exception as exc:
         print(f"[WARN] question-bank seed failed: {exc}", flush=True)
         return 0
+
+def quarantine_obvious_bad_questions():
+    """Hide legacy questions with clear structural/cross-domain defects.
+
+    This is non-destructive: rows remain in the database and are only marked
+    inactive, so historical references are preserved.
+    """
+    try:
+        from .question_quality import quality_issues
+        c=conn()
+        rows=c.execute("SELECT * FROM questions WHERE active=1").fetchall()
+        bad=[]
+        for row in rows:
+            issues=quality_issues(dict(row))
+            if issues:
+                bad.append((json.dumps(issues, ensure_ascii=False), row["id"]))
+        if bad:
+            c.executemany(
+                "UPDATE questions SET active=0 WHERE id=?",
+                [(qid,) for _,qid in bad]
+            )
+            c.commit()
+        else:
+            c.rollback()
+        c.close()
+        if bad:
+            print(f"[QUESTION_BANK] quarantined {len(bad)} legacy low-quality questions (non-destructive)", flush=True)
+        return len(bad)
+    except Exception as exc:
+        print(f"[WARN] question quality quarantine skipped: {exc}", flush=True)
+        return 0
+
 
 def get_student_by_tg(tg):
     c=conn(); r=c.execute("SELECT * FROM students WHERE telegram_id=?", (tg,)).fetchone(); c.close(); return r
