@@ -623,6 +623,110 @@ def weekly_summary(student_id, days=7):
     return {"days":len(rows),"study_hours":study,"execution":execution,"practice":practice,
             "trend":trends[-1] if trends else "نیازمند پایش"}
 
+
+def get_daily_report(student_id, report_date):
+    c=conn()
+    row=c.execute("SELECT * FROM daily_reports WHERE student_id=? AND report_date=?",(student_id,report_date)).fetchone()
+    c.close()
+    return row
+
+def save_daily_report(student_id, report_date, study_hours, plan_execution, subjects, practice_count,
+                      main_problem, satisfaction, tomorrow_goal, answers=None, status="normal",
+                      analysis_status="completed", analysis_json=None):
+    """
+    Insert/update one daily report for a student and mirror the objective progress
+    into student_progress. This is an additive report operation; student profile
+    and historical reports are never deleted.
+    """
+    c=conn()
+    existing=c.execute(
+        "SELECT id FROM daily_reports WHERE student_id=? AND report_date=?",
+        (student_id,report_date)
+    ).fetchone()
+    payload=json.dumps(subjects or [],ensure_ascii=False) if not isinstance(subjects,str) else subjects
+    analysis_payload=json.dumps(analysis_json or {},ensure_ascii=False) if not isinstance(analysis_json,str) else analysis_json
+    if existing:
+        report_id=existing["id"]
+        c.execute("""UPDATE daily_reports SET study_hours=?,plan_execution=?,subjects_json=?,
+                     practice_count=?,main_problem=?,satisfaction=?,tomorrow_goal=?,
+                     status=?,analysis_status=?,analysis_json=?,updated_at=CURRENT_TIMESTAMP
+                     WHERE id=?""",
+                  (float(study_hours or 0),float(plan_execution or 0),payload,int(practice_count or 0),
+                   main_problem or "",satisfaction or "",tomorrow_goal or "",status,
+                   analysis_status,analysis_payload,report_id))
+    else:
+        cur=c.execute("""INSERT INTO daily_reports
+            (student_id,report_date,study_hours,plan_execution,subjects_json,practice_count,
+             main_problem,satisfaction,tomorrow_goal,status,analysis_status,analysis_json)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (student_id,report_date,float(study_hours or 0),float(plan_execution or 0),payload,
+             int(practice_count or 0),main_problem or "",satisfaction or "",tomorrow_goal or "",
+             status,analysis_status,analysis_payload))
+        report_id=cur.lastrowid
+
+    # Keep a compact objective-progress record for weekly summaries/charts.
+    c.execute("""INSERT INTO student_progress
+        (student_id,report_date,study_hours,plan_execution,practice_count,status,trend,evidence_json)
+        VALUES(?,?,?,?,?,?,?,?)
+        ON CONFLICT(student_id,report_date) DO UPDATE SET
+          study_hours=excluded.study_hours,
+          plan_execution=excluded.plan_execution,
+          practice_count=excluded.practice_count,
+          status=excluded.status,
+          trend=excluded.trend,
+          evidence_json=excluded.evidence_json""",
+        (student_id,report_date,float(study_hours or 0),float(plan_execution or 0),
+         int(practice_count or 0),status,"ثبت گزارش روزانه",payload))
+    
+    if answers:
+        for key,value in answers.items():
+            c.execute("""INSERT INTO daily_report_answers(report_id,question_key,answer)
+                         VALUES(?,?,?)
+                         ON CONFLICT(report_id,question_key) DO UPDATE SET
+                         answer=excluded.answer""",
+                      (report_id,str(key),str(value or "")))
+    c.commit()
+    c.close()
+    return report_id
+
+def list_daily_report_answers(report_id):
+    c=conn()
+    rows=c.execute("SELECT * FROM daily_report_answers WHERE report_id=? ORDER BY id",(report_id,)).fetchall()
+    c.close()
+    return rows
+
+def save_ai_flag(student_id, report_id, flag_type, severity, reason):
+    c=conn()
+    cur=c.execute("""INSERT INTO ai_flags(student_id,report_id,flag_type,severity,reason)
+                     VALUES(?,?,?,?,?)""",(student_id,report_id,flag_type,severity,reason))
+    c.commit(); rid=cur.lastrowid; c.close()
+    return rid
+
+def save_ai_recommendation(student_id, report_id, recommendation, priority=1, source="rule_engine"):
+    c=conn()
+    cur=c.execute("""INSERT INTO ai_recommendations
+                     (student_id,report_id,recommendation,priority,source)
+                     VALUES(?,?,?,?,?)""",
+                  (student_id,report_id,recommendation,int(priority or 1),source))
+    c.commit(); rid=cur.lastrowid; c.close()
+    return rid
+
+def open_flag_exists(student_id, flag_type):
+    c=conn()
+    row=c.execute("""SELECT id FROM ai_flags
+                     WHERE student_id=? AND flag_type=? AND status='open'
+                     LIMIT 1""",(student_id,flag_type)).fetchone()
+    c.close()
+    return bool(row)
+
+def open_followup_exists(student_id, followup_type):
+    c=conn()
+    row=c.execute("""SELECT id FROM followups
+                     WHERE student_id=? AND followup_type=? AND status='open'
+                     LIMIT 1""",(student_id,followup_type)).fetchone()
+    c.close()
+    return bool(row)
+
 def stats():
     c=conn()
     out={}
