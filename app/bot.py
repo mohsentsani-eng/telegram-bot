@@ -365,6 +365,8 @@ async def academic_menu_escape(message:Message,state:FSMContext):
         return
     LAST_MENU_ACTION[key]=now
     await state.clear()
+    # Minimal acknowledgement before any database/channel work.
+    await message.answer("📊 ارزیابی تحصیلی — درخواست دریافت شد.")
     return await academic_start(message,state)
 
 @dp.message(StateFilter("*"), F.text.in_(MAIN_ACTIONS))
