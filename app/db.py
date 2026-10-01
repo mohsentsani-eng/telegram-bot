@@ -630,16 +630,25 @@ def question_quality_distribution():
     }
 
 def remove_duplicate_questions():
-    """Remove legacy exact duplicates while keeping the oldest record and its ID."""
-    c=conn(); rows=c.execute("SELECT * FROM questions ORDER BY id ASC").fetchall()
-    seen=set(); deleted=0
+    """Legacy compatibility wrapper: quarantine duplicates without deleting history."""
+    return quarantine_duplicate_questions()
+
+def quarantine_duplicate_questions():
+    """Deactivate exact duplicate active questions while preserving every row and ID."""
+    c=conn()
+    rows=c.execute("SELECT * FROM questions WHERE active=1 ORDER BY id ASC").fetchall()
+    seen=set()
+    quarantined=0
     for r in rows:
         key=_question_key(dict(r))
         if key in seen:
-            c.execute("DELETE FROM questions WHERE id=?", (r["id"],)); deleted+=1
+            c.execute("UPDATE questions SET active=0 WHERE id=?", (r["id"],))
+            quarantined += 1
         else:
             seen.add(key)
-    c.commit(); c.close(); return deleted
+    c.commit()
+    c.close()
+    return quarantined
 
 def assessment_snapshot(assessment_id):
     c=conn()
