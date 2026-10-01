@@ -230,27 +230,35 @@ def ensure_question_bank_seed():
         for row in c.execute("SELECT * FROM questions WHERE active=1").fetchall():
             existing.add(_question_key(dict(row)))
         pending = []
+        seed_stats = []
         for seed_path in seed_files:
             if not seed_path.exists():
                 continue
+            seen_rows = accepted_rows = duplicate_rows = invalid_rows = 0
             with seed_path.open(encoding="utf-8-sig", newline="") as f:
                 for row in _csv.DictReader(f):
+                    seen_rows += 1
                     try:
                         q = _clean_question_payload(row)
                         problems = _validate_question(q)
                         if problems:
+                            invalid_rows += 1
                             continue
                         key = _question_key(q)
                         if key in existing:
+                            duplicate_rows += 1
                             continue
                         existing.add(key)
+                        accepted_rows += 1
                         pending.append(tuple(q[k] for k in [
                             "grade","track","subject","book","chapter","topic","subtopic","difficulty",
                             "question","option_a","option_b","option_c","option_d","correct_option",
                             "explanation","source","source_type","source_year"
                         ]))
                     except Exception as exc:
+                        invalid_rows += 1
                         print(f"[WARN] question row skipped ({seed_path.name}): {exc}", flush=True)
+            seed_stats.append((seed_path.name, seen_rows, accepted_rows, duplicate_rows, invalid_rows))
         if pending:
             c.executemany(
                 """INSERT INTO questions
@@ -265,6 +273,9 @@ def ensure_question_bank_seed():
         c.close()
         if pending:
             print(f"[QUESTION_BANK] inserted {len(pending)} bundled questions", flush=True)
+        for name, seen, accepted, dup, invalid in seed_stats:
+            if seen:
+                print(f"[QUESTION_BANK] seed={name} rows={seen} accepted={accepted} duplicate={dup} invalid={invalid}", flush=True)
         quarantine_obvious_bad_questions()
         return len(pending)
     except Exception as exc:
