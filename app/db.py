@@ -601,8 +601,10 @@ def question_quality_distribution():
     return {
         "total": total,
         "correct_option": option_counts,
+        "correct": option_counts,
         "difficulty": difficulty_counts,
         "option_pct": {k: round(v * 100 / total, 1) if total else 0 for k, v in option_counts.items()},
+        "correct_pct": {k: round(v * 100 / total, 1) if total else 0 for k, v in option_counts.items()},
     }
 
 def remove_duplicate_questions():
