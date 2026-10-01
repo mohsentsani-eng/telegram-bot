@@ -509,51 +509,62 @@ async def academic_start(message,state):
     try:
         if not await require_channel(message):
             return
+
         # Question bank is initialized once at application startup.
         # Avoid reseeding/scanning the entire bank on every menu click.
         s=db.get_student_by_tg(message.from_user.id)
         if not s:
             return await begin_registration(message,state)
+
         filters={"grade":str(s["grade"]).strip()}
-    if s["track"]: filters["track"]=str(s["track"]).strip()
-    allowed=grade_subjects(s["grade"], s["track"])
-    bank_subjects=db.distinct_question_field("subject",filters)
-    # Match canonical catalog names against legacy CSV spellings as well.
-    aliases={
-        "انگلیسی":"زبان انگلیسی",
-        "علوم":"علوم تجربی",
-        "قرآن":"آموزش قرآن",
-        "جامعه شناسی":"جامعه‌شناسی",
-    }
-    subjects=[]
-    for canonical in allowed:
-        candidates=[canonical, aliases.get(canonical)]
-        if any(c and any(db._norm(c)==db._norm(b) for b in bank_subjects) for c in candidates):
-            subjects.append(canonical)
-    if not subjects:
-        await message.answer(
-            f"⚠️ برای پایه {s['grade']} و رشته {s['track'] or 'عمومی'} هنوز سؤال فعال در بانک پیدا نشد.\n\n"
-            f"تعداد سؤال فعال برای این پایه/رشته: {db.count_questions(filters)}\n\n"
-            "درس‌های نمایش‌داده‌شده در این بخش فقط باید متناسب با پایه و رشته شما باشند.",
-            reply_markup=nav([]))
-        return
-    await state.clear(); await state.update_data(filters=filters)
-    await state.set_state(Academic.subject)
-    general_by_grade = {
-        "چهارم": ["فارسی","نگارش","آموزش قرآن","هدیه‌های آسمان","علوم تجربی","مطالعات اجتماعی"],
-        "پنجم": ["فارسی","نگارش","آموزش قرآن","هدیه‌های آسمان","علوم تجربی","مطالعات اجتماعی"],
-        "ششم": ["فارسی","نگارش","آموزش قرآن","هدیه‌های آسمان","علوم تجربی","مطالعات اجتماعی"],
-        "هفتم": ["فارسی","نگارش","آموزش قرآن","پیام‌های آسمان","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی"],
-        "هشتم": ["فارسی","نگارش","آموزش قرآن","پیام‌های آسمان","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی"],
-        "نهم": ["فارسی","نگارش","آموزش قرآن","پیام‌های آسمان","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی","آمادگی دفاعی"],
-    }
-    general = [x for x in subjects if x in general_by_grade.get(s["grade"], HIGH_GENERAL.get(s["grade"], []))]
-    specialized = [x for x in subjects if x not in general]
-    sections=[]
-    if general:
-        sections.append("📘 <b>دروس عمومی</b>\n" + "، ".join(general))
-    if specialized:
-        sections.append("📕 <b>دروس اختصاصی</b>\n" + "، ".join(specialized))
+        if s["track"]:
+            filters["track"]=str(s["track"]).strip()
+
+        allowed=grade_subjects(s["grade"], s["track"])
+        bank_subjects=db.distinct_question_field("subject",filters)
+
+        # Match canonical catalog names against legacy CSV spellings as well.
+        aliases={
+            "انگلیسی":"زبان انگلیسی",
+            "علوم":"علوم تجربی",
+            "قرآن":"آموزش قرآن",
+            "جامعه شناسی":"جامعه‌شناسی",
+        }
+        subjects=[]
+        for canonical in allowed:
+            candidates=[canonical, aliases.get(canonical)]
+            if any(c and any(db._norm(c)==db._norm(b) for b in bank_subjects) for c in candidates):
+                subjects.append(canonical)
+
+        if not subjects:
+            await message.answer(
+                f"⚠️ برای پایه {s['grade']} و رشته {s['track'] or 'عمومی'} هنوز سؤال فعال در بانک پیدا نشد.\n\n"
+                f"تعداد سؤال فعال برای این پایه/رشته: {db.count_questions(filters)}\n\n"
+                "درس‌های نمایش‌داده‌شده در این بخش فقط باید متناسب با پایه و رشته شما باشند.",
+                reply_markup=nav([])
+            )
+            return
+
+        await state.clear()
+        await state.update_data(filters=filters)
+        await state.set_state(Academic.subject)
+
+        general_by_grade = {
+            "چهارم": ["فارسی","نگارش","آموزش قرآن","هدیه‌های آسمان","علوم تجربی","مطالعات اجتماعی"],
+            "پنجم": ["فارسی","نگارش","آموزش قرآن","هدیه‌های آسمان","علوم تجربی","مطالعات اجتماعی"],
+            "ششم": ["فارسی","نگارش","آموزش قرآن","هدیه‌های آسمان","علوم تجربی","مطالعات اجتماعی"],
+            "هفتم": ["فارسی","نگارش","آموزش قرآن","پیام‌های آسمان","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی"],
+            "هشتم": ["فارسی","نگارش","آموزش قرآن","پیام‌های آسمان","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی"],
+            "نهم": ["فارسی","نگارش","آموزش قرآن","پیام‌های آسمان","علوم تجربی","مطالعات اجتماعی","عربی","انگلیسی","آمادگی دفاعی"],
+        }
+        general = [x for x in subjects if x in general_by_grade.get(s["grade"], HIGH_GENERAL.get(s["grade"], []))]
+        specialized = [x for x in subjects if x not in general]
+        sections=[]
+        if general:
+            sections.append("📘 <b>دروس عمومی</b>\n" + "، ".join(general))
+        if specialized:
+            sections.append("📕 <b>دروس اختصاصی</b>\n" + "، ".join(specialized))
+
         await message.answer("\n\n".join(sections))
         await message.answer("درس موردنظر را انتخاب کنید:",reply_markup=nav(subjects))
     except Exception as exc:
