@@ -550,6 +550,37 @@ def distinct_question_field(field, filters=None):
 def count_questions(filters=None):
     return len(list_questions(filters or {}))
 
+def question_coverage_audit(min_per_subject=10):
+    """Compare active bank coverage against the curriculum catalog."""
+    catalog_path = PROJECT_ROOT / "data" / "question_bank_catalog.json"
+    with catalog_path.open(encoding="utf-8") as fh:
+        catalog = json.load(fh)
+    c = conn()
+    rows = c.execute(
+        "SELECT grade,COALESCE(track,'') track,subject,COUNT(*) n "
+        "FROM questions WHERE active=1 GROUP BY grade,COALESCE(track,''),subject"
+    ).fetchall()
+    c.close()
+    counts = {(_norm(r["grade"]), _norm(r["track"]), _norm(r["subject"])): int(r["n"]) for r in rows}
+    gaps = []
+    covered = 0
+    expected = 0
+    for grade, tracks in catalog.items():
+        if isinstance(tracks, list):
+            track_items = [("", tracks)]
+        else:
+            track_items = list(tracks.items())
+        for track, subjects in track_items:
+            for subject in subjects:
+                expected += 1
+                n = counts.get((_norm(grade), _norm(track), _norm(subject)), 0)
+                if n >= min_per_subject:
+                    covered += 1
+                else:
+                    gaps.append({"grade": grade, "track": track, "subject": subject, "count": n,
+                                 "needed": max(0, min_per_subject - n)})
+    return {"expected": expected, "covered": covered, "gaps": gaps, "coverage_pct": round(covered * 100 / expected, 1) if expected else 0}
+
 def remove_duplicate_questions():
     """Remove legacy exact duplicates while keeping the oldest record and its ID."""
     c=conn(); rows=c.execute("SELECT * FROM questions ORDER BY id ASC").fetchall()
