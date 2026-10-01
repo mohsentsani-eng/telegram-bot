@@ -415,15 +415,16 @@ async def daily_report_start(message:Message,state:FSMContext):
     existing=db.get_daily_report(s["id"],today_tehran())
     if existing:
         await message.answer(
-            "🌙 <b>گزارش امروز</b>\n\n"
-            "گزارش امروز شما قبلاً ثبت شده است. اگر دوباره ادامه دهید، "
-            "همان گزارش امروز به‌روزرسانی می‌شود و سوابق قبلی روزهای گذشته حفظ می‌شوند.\n\n"
+            "🌙 <b>ویرایش گزارش امروز</b>\n\n"
+            "گزارش امروز شما قبلاً ثبت شده است. پاسخ‌های جدید، فقط گزارش امروز را به‌روزرسانی می‌کنند؛ "
+            "سوابق روزهای گذشته و پرونده دانش‌آموز حفظ می‌شوند.\n\n"
             f"📅 تاریخ: {existing['report_date']}\n"
-            f"⏱️ مطالعه: {existing['study_hours'] or 0:g} ساعت\n"
-            f"📈 اجرای برنامه: {existing['plan_execution'] or 0:g}٪\n"
-            f"📝 تمرین/تست: {existing['practice_count'] or 0}",
-            reply_markup=nav(["شروع/ویرایش گزارش امروز"])
+            f"⏱️ مطالعه قبلی: {existing['study_hours'] or 0:g} ساعت\n"
+            f"📈 اجرای برنامه قبلی: {existing['plan_execution'] or 0:g}٪\n"
+            f"📝 تمرین/تست قبلی: {existing['practice_count'] or 0}\n\n"
+            "۱) امروز چند ساعت مطالعه مفید داشتی؟"
         )
+        await state.set_state(DailyReport.study_hours)
         return
     await state.set_state(DailyReport.study_hours)
     await message.answer(
