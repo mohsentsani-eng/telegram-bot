@@ -19,6 +19,10 @@ CHANNEL_USERNAME="@tarnoomhamdeli"
 BOT_USERNAME=os.getenv("BOT_USERNAME","").strip().lstrip("@")
 INSTAGRAM_URL=os.getenv("INSTAGRAM_URL","").strip() or "https://www.instagram.com/tarannomhamdeli.psy/"
 
+# Prevent repeated Telegram taps from generating duplicate menu responses.
+LAST_MENU_ACTION={}
+MENU_DEBOUNCE_SECONDS=1.5
+
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN is not set. Put your bot token in .env")
 
@@ -248,6 +252,11 @@ async def begin_registration(message:Message,state:FSMContext, referral="", rene
 # در هر مرحله‌ای از ثبت‌نام یا آزمون، واقعاً کار کنند.
 @dp.message(F.text == HOME)
 async def global_home(message:Message,state:FSMContext):
+    now=time.monotonic()
+    uid=message.from_user.id
+    if now-LAST_MENU_ACTION.get(uid,0) < MENU_DEBOUNCE_SECONDS:
+        return
+    LAST_MENU_ACTION[uid]=now
     await state.clear()
     await message.answer("🏠 منوی اصلی ترنم همدلی", reply_markup=main_menu())
 
@@ -336,6 +345,13 @@ async def global_main_action(message:Message,state:FSMContext):
     # Existing dedicated handlers registered earlier (notably the channel button)
     # get the first chance to handle their own action. This handler covers menu
     # actions while an FSM is active, where previously the FSM swallowed them.
+    now=time.monotonic()
+    uid=message.from_user.id
+    action=message.text or ""
+    last=LAST_MENU_ACTION.get((uid,action),0)
+    if now-last < MENU_DEBOUNCE_SECONDS:
+        return
+    LAST_MENU_ACTION[(uid,action)]=now
     s=db.get_student_by_tg(message.from_user.id)
     if message.text == "📤 معرفی به دوست":
         return await share_invite(message)
