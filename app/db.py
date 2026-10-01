@@ -581,6 +581,23 @@ def question_coverage_audit(min_per_subject=10):
                                  "needed": max(0, min_per_subject - n)})
     return {"expected": expected, "covered": covered, "gaps": gaps, "coverage_pct": round(covered * 100 / expected, 1) if expected else 0}
 
+def question_topic_coverage_audit(min_per_topic=10):
+    """Report active topic coverage without modifying any question or student record."""
+    c = conn()
+    rows = c.execute(
+        "SELECT grade,COALESCE(track,'') track,subject,COALESCE(chapter,'') chapter,"
+        "COALESCE(topic,'') topic,COUNT(*) n FROM questions WHERE active=1 "
+        "AND TRIM(COALESCE(topic,''))<>'' GROUP BY grade,track,subject,chapter,topic "
+        "ORDER BY grade,track,subject,chapter,topic"
+    ).fetchall()
+    c.close()
+    gaps=[]
+    for r in rows:
+        n=int(r["n"])
+        if n<min_per_topic:
+            gaps.append({"grade":r["grade"],"track":r["track"],"subject":r["subject"],"chapter":r["chapter"],"topic":r["topic"],"count":n,"needed":min_per_topic-n})
+    return {"topics":len(rows),"gaps":gaps,"min_per_topic":min_per_topic}
+
 def question_quality_audit():
     """Summarize active questions that fail the current non-destructive quality rules."""
     from .question_quality import quality_issues
