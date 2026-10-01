@@ -469,6 +469,9 @@ async def show_profile(message):
 
 async def academic_start(message,state):
     if not await require_channel(message): return
+    # Self-heal the persistent Railway SQLite bank before reading subjects.
+    # This is additive only and never touches student records.
+    db.ensure_question_bank_seed()
     s=db.get_student_by_tg(message.from_user.id)
     filters={"grade":s["grade"]}
     if s["track"]: filters["track"]=s["track"]
