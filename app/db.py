@@ -388,6 +388,12 @@ def insert_question_if_new(q):
     q=_clean_question_payload(q)
     problems=_validate_question(q)
     if problems: raise ValueError("Invalid question: " + ", ".join(problems))
+    # Quality gate applies only to newly inserted questions. Existing records
+    # are never deleted or rewritten by this check.
+    from .question_quality import quality_issues
+    quality=quality_issues(q)
+    if quality:
+        raise ValueError("Question quality gate: " + ", ".join(quality))
     c=conn(); rows=c.execute("SELECT * FROM questions WHERE active=1").fetchall()
     key=_question_key(q)
     if any(_question_key(dict(r))==key for r in rows):
