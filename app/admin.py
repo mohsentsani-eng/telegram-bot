@@ -717,14 +717,16 @@ def question_report(req: Request):
     c.close()
     audit=db.question_coverage_audit(10)
     quality=db.question_quality_distribution()
+    quality_audit=db.question_quality_audit()
     trs="".join(f"<tr><td>{esc(r['grade'])}</td><td>{esc(r['track'])}</td><td>{esc(r['subject'])}</td><td>{esc(r['chapter'])}</td><td>{esc(r['topic'])}</td><td>{esc(r['difficulty'])}</td><td>{r['n']}</td></tr>" for r in rows)
     qrows="".join(f"<tr><td>{k}</td><td>{quality['correct'].get(k,0)}</td><td>{quality['correct_pct'].get(k,0)}٪</td></tr>" for k in ("A","B","C","D"))
     drows="".join(f"<tr><td>{esc(k)}</td><td>{v}</td><td>{round(v/max(quality['total'],1)*100,1)}٪</td></tr>" for k,v in quality["difficulty"].items())
     gaps="".join(f"<tr><td>{esc(g['grade'])}</td><td>{esc(g['track'])}</td><td>{esc(g['subject'])}</td><td>{g['count']}</td><td>{g['needed']}</td></tr>" for g in audit["gaps"])
     summary=f"<p><b>پوشش حداقل ۱۰ سؤال برای هر درس:</b> {audit['covered']} از {audit['expected']} ({audit['coverage_pct']}٪)</p>"
     gap_table="<h2>موارد نیازمند تکمیل</h2><table><tr><th>پایه</th><th>رشته</th><th>درس</th><th>موجود</th><th>نیاز</th></tr>"+gaps+"</table>"
-    quality_html="<h2>کنترل کیفیت بانک</h2><div class='grid'><div class='card'>کل سؤالات فعال<div class='n'>"+str(quality["total"])+"</div></div></div><div class='grid'><div class='card'><h3>توزیع پاسخ صحیح</h3><table><tr><th>گزینه</th><th>تعداد</th><th>درصد</th></tr>"+qrows+"</table></div><div class='card'><h3>توزیع سطح دشواری</h3><table><tr><th>سطح</th><th>تعداد</th><th>درصد</th></tr>"+drows+"</table></div></div>"
-    body="<h1>گزارش پوشش بانک سؤال</h1>"+summary+quality_html+gap_table+"<h2>جزئیات فصل/مبحث</h2><table><tr><th>پایه</th><th>رشته</th><th>درس</th><th>فصل</th><th>مبحث</th><th>سطح</th><th>تعداد</th></tr>"+trs+"</table>"
+    quality_html="<h2>کنترل کیفیت بانک</h2><div class='grid'><div class='card'>کل سؤالات فعال<div class='n'>"+str(quality["total"])+"</div></div><div class='card'>سؤالات نیازمند بررسی<div class='n'>"+str(quality_audit["bad_total"])+"</div><div class='muted'>کیفیت فعلی: "+str(quality_audit["quality_pct"])+"٪</div></div></div><div class='grid'><div class='card'><h3>توزیع پاسخ صحیح</h3><table><tr><th>گزینه</th><th>تعداد</th><th>درصد</th></tr>"+qrows+"</table></div><div class='card'><h3>توزیع سطح دشواری</h3><table><tr><th>سطح</th><th>تعداد</th><th>درصد</th></tr>"+drows+"</table></div></div>"
+    issues_html="<p class='muted'>این حسابرسی فقط گزارش می‌دهد و هیچ سؤالی را حذف یا غیرفعال نمی‌کند.</p><table><tr><th>نوع ایراد</th><th>تعداد</th></tr>"+"" .join(f"<tr><td>{esc(k)}</td><td>{v}</td></tr>" for k,v in quality_audit["issue_counts"].items())+"</table>" if quality_audit["issue_counts"] else "<p class='ok'>ایراد کیفیتی فعال شناسایی نشد.</p>"
+    body="<h1>گزارش پوشش بانک سؤال</h1>"+summary+quality_html+issues_html+gap_table+"<h2>جزئیات فصل/مبحث</h2><table><tr><th>پایه</th><th>رشته</th><th>درس</th><th>فصل</th><th>مبحث</th><th>سطح</th><th>تعداد</th></tr>"+trs+"</table>"
     return page("گزارش پوشش", body)
 
 @app.get("/admin/requests", response_class=HTMLResponse)
