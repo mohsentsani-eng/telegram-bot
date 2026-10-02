@@ -11,6 +11,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from . import db
 from . import ai
+from . import psych_access
 
 TOKEN=os.getenv("BOT_TOKEN")
 CHANNEL_ID=os.getenv("REQUIRED_CHANNEL_ID","@tarnoomhamdeli").strip() or "@tarnoomhamdeli"
@@ -1060,6 +1061,8 @@ async def _psych_finish(message,state,d):
     functional=max([int(x.get("functional_impact_score",0)) for x in results.values() if isinstance(x,dict) and x.get("functional_impact_score") is not None] or [0])
     summary={"assessment_type":"screening_summary","screening_version":screening_version,"age":d.get("age"),"results":results,"domains":domains,"safety_positive":safety,"needs_followup":needs_followup,"functional_impact_max":functional,"summary_level":summary_level,"note":"غربالگری تشخیصی نیست و تفسیر نهایی با متخصص مرکز انجام می‌شود."}
     db.save_psych(s["id"],"summary",None,summary_level,summary)
+    # Consume the single screening entitlement only after the complete result is saved.
+    psych_access.complete(s["id"])
     await state.clear()
     lines=["🧠 <b>نتیجه غربالگری اولیه روان‌شناختی</b>","",
            "این نتیجه «غربالگری» است، نه تشخیص قطعی. ابزارها با روش امتیازدهی استاندارد تفسیر شده‌اند؛ برای تصمیم تخصصی، مصاحبه و بررسی متخصص لازم است."]
@@ -1086,10 +1089,38 @@ def _psych_level(score,kind):
         return "حداقل" if score<=4 else ("خفیف" if score<=9 else ("متوسط" if score<=14 else ("نسبتاً شدید" if score<=19 else "شدید")))
     return "حداقل" if score<=4 else ("خفیف" if score<=9 else ("متوسط" if score<=14 else "شدید"))
 
+async def _psych_begin_module_resume(message,state,d):
+    module=d.get("module","")
+    if not module:
+        return
+    cfg=d["cfg"]
+    index=int(d.get("index",0))
+    titles={"psc_parent":"غربالگری روانی-اجتماعی کودک (نسخه والد/مراقب)",
+            "psc_youth":"غربالگری روانی-اجتماعی نوجوان",
+            "phq9":"غربالگری علائم افسردگی نوجوان",
+            "phq_a":"غربالگری علائم افسردگی نوجوان",
+            "gad7":"غربالگری علائم اضطرابی"}
+    if module.startswith("psc"):
+        items=cfg["psc"]["items_parent"] if module=="psc_parent" else cfg["psc"]["items_youth"]
+        scale=cfg["scale_3"]
+    elif module in {"phq9","phq_a"}:
+        items=cfg["symptom_screen"]["items"]; scale=cfg["scale_4"]
+    else:
+        items=cfg["anxiety_screen"]["items"]; scale=cfg["scale_4"]
+    index=max(0,min(index,len(items)-1))
+    await message.answer(
+        f"📌 <b>{titles.get(module,module)}</b>\n\nسؤال {index+1} از {len(items)}",
+        reply_markup=nav(scale)
+    )
+    await message.answer(items[index],reply_markup=nav(scale))
+
+
 async def _psych_begin_module(message,state,d,module):
     cfg=d["cfg"]
     d["module"]=module; d["index"]=0; d["answers"]=[]
     await state.update_data(**d)
+    s=db.get_student_by_tg(message.from_user.id)
+    if s: psych_access.save_session(s["id"],d)
     titles={"psc_parent":"غربالگری روانی-اجتماعی کودک (نسخه والد/مراقب)",
             "psc_youth":"غربالگری روانی-اجتماعی نوجوان",
             "phq9":"غربالگری علائم افسردگی",
@@ -1108,9 +1139,54 @@ async def _psych_begin_module(message,state,d,module):
 async def psych_start(message,state):
     if not await require_service_access(message,"ارزیابی روان‌شناختی"): return
     if not await require_channel(message): return
+
+    s=db.get_student_by_tg(message.from_user.id)
+    if not s:
+        return await begin_registration(message,state)
+
     cfg=json.load(open(os.path.join(os.path.dirname(__file__),"..","data","psychology.json"),encoding="utf-8"))
+    access=db.has_active_access(s["id"])
+    if not access:
+        return
+
+    gate=psych_access.prepare(s["id"],access["id"],cfg.get("version",""))
+    if not gate["allowed"]:
+        await message.answer(
+            "🔒 <b>اعتبار این ارزیابی در این دوره استفاده شده است.</b>\n\n"
+            "هر دانش‌آموز در هر دوره دسترسی فعال، یک نوبت ارزیابی روان‌شناختی دارد. "
+            "اگر نیاز به ارزیابی مجدد وجود دارد، مشاور/مدیر مرکز می‌تواند دسترسی جدید یا ارزیابی مجدد را فعال کند.",
+            reply_markup=main_menu()
+        )
+        return
+
     await state.clear()
-    await state.update_data(cfg=cfg,phase="consent",age=None,respondent=None,module="",index=0,answers=[],results={},functional_impact=None)
+    session=gate.get("session")
+    if session:
+        d=dict(session.get("state") or {})
+        d["cfg"]=cfg
+        await state.update_data(**d)
+        await state.set_state(Psych.answering)
+        phase=d.get("phase","consent")
+        if phase=="consent":
+            consent_options=cfg.get("consent_options",["موافقم و شروع می‌کنم","انصراف"])
+            await message.answer("↩️ <b>ارزیابی قبلی شما ادامه دارد.</b>\n\n"+cfg["disclaimer"],
+                                 reply_markup=nav(consent_options))
+            return
+        await message.answer("↩️ <b>ادامه ارزیابی قبلی</b>\n\nپاسخ‌های قبلی شما حفظ شده‌اند و از همان مرحله ادامه می‌دهیم.",
+                             reply_markup=nav([]))
+        if phase=="age":
+            await message.answer(cfg["age_prompt"]+"\n\n"+cfg.get("timeframe_prompt",""),reply_markup=nav([]))
+        elif phase=="respondent":
+            await message.answer(cfg.get("young_respondent_prompt","برای این سن، پاسخ والد/مراقب لازم است."),
+                                 reply_markup=nav(cfg.get("young_respondent_options",[])))
+        else:
+            await _psych_begin_module_resume(message,state,d)
+        return
+
+    d={"cfg":cfg,"phase":"consent","age":None,"respondent":None,"module":"",
+       "index":0,"answers":[],"results":{},"functional_impact":None}
+    psych_access.create_session(s["id"],access["id"],cfg.get("version",""),d)
+    await state.update_data(**d)
     await state.set_state(Psych.answering)
     consent_options=cfg.get("consent_options",["موافقم و شروع می‌کنم","انصراف"])
     await message.answer(
@@ -1142,6 +1218,8 @@ async def psych_ans(message:Message,state:FSMContext):
             return await message.answer("ارزیابی لغو شد. هر زمان خواستی می‌توانی دوباره شروع کنی.",reply_markup=main_menu())
         d["phase"]="age"
         await state.update_data(**d)
+        s=db.get_student_by_tg(message.from_user.id)
+        if s: psych_access.save_session(s["id"],d,consent=True)
         return await message.answer(cfg["age_prompt"]+"\n\n"+cfg.get("timeframe_prompt",""),reply_markup=nav([]))
     if d.get("phase")=="age":
         try: age=int(value.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹","0123456789")))
@@ -1151,6 +1229,8 @@ async def psych_ans(message:Message,state:FSMContext):
         if age<=10:
             d["phase"]="respondent"
             await state.update_data(**d)
+            s=db.get_student_by_tg(message.from_user.id)
+            if s: psych_access.save_session(s["id"],d)
             return await message.answer(cfg.get("young_respondent_prompt","برای سنین ۸ تا ۱۰ سال، این غربالگری باید توسط والد یا مراقب اصلی پاسخ داده شود."),reply_markup=nav(cfg.get("young_respondent_options",["والد/مراقب هستم","من دانش‌آموز هستم"])))
         d["phase"]="instrument"
         if age<=10: return await _psych_begin_module(message,state,d,"psc_parent")
@@ -1173,6 +1253,8 @@ async def psych_ans(message:Message,state:FSMContext):
         d["results"][module]["functional_impact_level"]=value
         d["phase"]="instrument"
         await state.update_data(**d)
+        s=db.get_student_by_tg(message.from_user.id)
+        if s: psych_access.save_session(s["id"],d)
         return await _psych_after_module(message,state,d)
     if module.startswith("psc"):
         scale=cfg["scale_3"]; items=cfg["psc"]["items_parent"] if module=="psc_parent" else cfg["psc"]["items_youth"]
@@ -1184,6 +1266,8 @@ async def psych_ans(message:Message,state:FSMContext):
     d["answers"].append(scale.index(value)); d["index"]+=1
     if d["index"]<len(items):
         await state.update_data(**d)
+        s=db.get_student_by_tg(message.from_user.id)
+        if s: psych_access.save_session(s["id"],d)
         return await message.answer(f"سؤال {d['index']+1} از {len(items)}\n{items[d['index']]}",reply_markup=nav(scale))
     total=sum(d["answers"])
     if module=="psc_parent":
@@ -1219,6 +1303,8 @@ async def psych_ans(message:Message,state:FSMContext):
             )
         d["phase"]="phq_function"
         await state.update_data(**d)
+        s=db.get_student_by_tg(message.from_user.id)
+        if s: psych_access.save_session(s["id"],d)
         return await message.answer(
             cfg.get("functional_prompt","این مشکلات چقدر زندگی روزمره را دشوار کرده است؟"),
             reply_markup=nav(cfg.get("functional_scale",[]))
@@ -1230,6 +1316,8 @@ async def psych_ans(message:Message,state:FSMContext):
     }
     d["phase"]="gad_function"
     await state.update_data(**d)
+    s=db.get_student_by_tg(message.from_user.id)
+    if s: psych_access.save_session(s["id"],d)
     return await message.answer(
         cfg.get("functional_prompt","اگر هر یک از مشکلات بالا را داشته‌ای، این مشکلات چقدر انجام کارهای روزمره، درس و مدرسه/کار، امور خانه یا ارتباط با دیگران را برایت دشوار کرده است؟"),
         reply_markup=nav(cfg.get("functional_scale",[]))
