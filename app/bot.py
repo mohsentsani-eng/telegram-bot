@@ -1544,6 +1544,7 @@ def build_initial_plan(data, student):
 
 @dp.message(F.text == "📅 برنامه‌ریزی تخصصی")
 async def planner_start(message:Message,state:FSMContext):
+    if not await require_service_access(message,"برنامه‌ریزی تخصصی"): return
     student=db.get_student_by_tg(message.from_user.id)
     if not student:
         return await begin_registration(message,state)
