@@ -963,6 +963,18 @@ def create_access_request(student_id, plan_code="trial", note=""):
     if existing and existing["status"] in {"active","pending"}:
         if existing["status"]=="active" and existing["expires_at"] and existing["expires_at"] <= __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"):
             pass
+        elif existing["status"]=="pending":
+            # Upgrade a generic renewal request to the concrete plan the student selected.
+            c=conn()
+            c.execute("""UPDATE student_access
+                         SET plan_code=?,note=?,updated_at=CURRENT_TIMESTAMP
+                         WHERE id=? AND status='pending'""",
+                      (plan_code,note or "",int(existing["id"])))
+            c.execute("""INSERT INTO access_events(student_id,action,plan_code,actor,note)
+                         VALUES(?,?,?,?,?)""",
+                      (int(student_id),"request_updated",plan_code,"student",note or ""))
+            c.commit(); c.close()
+            return existing["id"]
         else:
             return existing["id"]
     c=conn()
