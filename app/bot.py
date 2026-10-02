@@ -1036,8 +1036,8 @@ async def _psych_finish(message,state,d):
     safety=bool((phq or {}).get("item9_positive"))
     needs_followup=bool(
         (psc or {}).get("positive") or
-        (phq and phq["score"]>=10) or
-        (gad and gad["score"]>=10) or
+        (phq and phq.get("followup_positive")) or
+        (gad and gad.get("followup_positive")) or
         (phq and phq.get("functional_impact_score",0)>=1) or
         safety
     )
@@ -1050,7 +1050,7 @@ async def _psych_finish(message,state,d):
             print(f"[PSYCH] safety follow-up creation failed: {type(exc).__name__}: {exc}",flush=True)
     await state.clear()
     lines=["🧠 <b>نتیجه غربالگری اولیه روان‌شناختی</b>","",
-           "این نتیجه «غربالگری» است، نه تشخیص قطعی. تفسیر نهایی باید با مصاحبه و نظر متخصص انجام شود."]
+           "این نتیجه «غربالگری» است، نه تشخیص قطعی. ابزارها با روش امتیازدهی استاندارد تفسیر شده‌اند؛ برای تصمیم تخصصی، مصاحبه و بررسی متخصص لازم است."]
     if psc:
         label="نیازمند بررسی بیشتر" if psc["positive"] else "در محدوده غربالگری منفی"
         lines += ["",f"🔹 مشکلات روانی-اجتماعی: <b>{psc['score']}</b> از ۷۰ — {label}"]
@@ -1152,15 +1152,31 @@ async def psych_ans(message:Message,state:FSMContext):
         return await message.answer(f"سؤال {d['index']+1} از {len(items)}\n{items[d['index']]}",reply_markup=nav(scale))
     total=sum(d["answers"])
     if module=="psc_parent":
-        cutoff=cfg["psc"]["cutoff_parent_4_5"] if d["age"]<=5 else cfg["psc"]["cutoff_parent_6_10"]
-        d["results"]["psc_parent"]={"instrument":"PSC-35","score":total,"max_score":70,"cutoff":cutoff,"positive":total>=cutoff,"level":"نیازمند بررسی بیشتر" if total>=cutoff else "در محدوده غربالگری منفی"}
+        # Ages 8-10 use the school-age caregiver PSC-35 scoring: Never=0, Sometimes=1, Often=2; cutoff 28.
+        cutoff=cfg["psc"].get("cutoff_parent_schoolage",28)
+        d["results"]["psc_parent"]={
+            "instrument":"PSC-35 (Parent/Caregiver)","score":total,"max_score":70,"cutoff":cutoff,
+            "positive":total>=cutoff,
+            "level":"نیازمند بررسی بیشتر" if total>=cutoff else "در محدوده غربالگری منفی",
+            "respondent":"parent_or_caregiver"
+        }
         return await _psych_finish(message,state,d)
     if module=="psc_youth":
-        d["results"]["psc_youth"]={"instrument":"Y-PSC / PSC-Y","score":total,"max_score":70,"cutoff":cfg["psc"]["cutoff_youth"],"positive":total>=cfg["psc"]["cutoff_youth"],"level":"نیازمند بررسی بیشتر" if total>=cfg["psc"]["cutoff_youth"] else "در محدوده غربالگری منفی"}
+        d["results"]["psc_youth"]={
+            "instrument":"Y-PSC / PSC-Y","score":total,"max_score":70,
+            "cutoff":cfg["psc"]["cutoff_youth"],"positive":total>=cfg["psc"]["cutoff_youth"],
+            "level":"نیازمند بررسی بیشتر" if total>=cfg["psc"]["cutoff_youth"] else "در محدوده غربالگری منفی",
+            "respondent":"self"
+        }
         if d["results"]["psc_youth"]["positive"]: return await _psych_after_module(message,state,d)
         return await _psych_finish(message,state,d)
     if module in {"phq9","phq_a"}:
-        d["results"][module]={"instrument":"PHQ-9","score":total,"max_score":27,"level":_psych_level(total,"phq"),"item9_positive":d["answers"][8]>0}
+        phq_cutoff=cfg["symptom_screen"].get("cutoff_adolescent" if d["age"]<=17 else "cutoff_adult",10)
+        d["results"][module]={
+            "instrument":"PHQ-9","score":total,"max_score":27,"level":_psych_level(total,"phq"),
+            "followup_cutoff":phq_cutoff,"followup_positive":total>=phq_cutoff,
+            "item9_positive":d["answers"][8]>0,"respondent":"self"
+        }
         if d["answers"][8]>0:
             await message.answer(
                 "⚠️ <b>پاسخ ایمنی شما مثبت بوده است.</b>\n\n"
@@ -1172,7 +1188,11 @@ async def psych_ans(message:Message,state:FSMContext):
             cfg.get("functional_prompt","این مشکلات چقدر زندگی روزمره را دشوار کرده است؟"),
             reply_markup=nav(cfg.get("functional_scale",[]))
         )
-    d["results"]["gad7"]={"instrument":"GAD-7","score":total,"max_score":21,"level":_psych_level(total,"gad")}
+    gad_cutoff=cfg["anxiety_screen"].get("cutoff",10)
+    d["results"]["gad7"]={
+        "instrument":"GAD-7","score":total,"max_score":21,"level":_psych_level(total,"gad"),
+        "followup_cutoff":gad_cutoff,"followup_positive":total>=gad_cutoff,"respondent":"self"
+    }
     return await _psych_finish(message,state,d)
 
 async def _psych_after_module(message,state,d):
