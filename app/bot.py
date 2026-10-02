@@ -1025,8 +1025,9 @@ async def _psych_finish(message,state,d):
         await state.clear()
         return await begin_registration(message,state)
     results=d.get("results",{})
+    screening_version=d.get("cfg",{}).get("version","")
     for key,item in results.items():
-        item["screening_version"]=d.get("cfg",{}).get("version","")
+        item["screening_version"]=screening_version
         item["age"]=d.get("age")
         item["assessment_type"]="screening"
         db.save_psych(s["id"],key,item["score"],item["level"],item)
@@ -1048,6 +1049,9 @@ async def _psych_finish(message,state,d):
                 db.create_followup(s["id"],"psych_safety","urgent",None,note)
         except Exception as exc:
             print(f"[PSYCH] safety follow-up creation failed: {type(exc).__name__}: {exc}",flush=True)
+    summary_level="نیازمند پیگیری تخصصی" if needs_followup else "غربالگری بدون علامت برجسته"
+    summary={"assessment_type":"screening_summary","screening_version":screening_version,"age":d.get("age"),"results":results,"safety_positive":safety,"needs_followup":needs_followup,"summary_level":summary_level,"note":"غربالگری تشخیصی نیست و تفسیر نهایی با متخصص مرکز انجام می‌شود."}
+    db.save_psych(s["id"],"summary",None,summary_level,summary)
     await state.clear()
     lines=["🧠 <b>نتیجه غربالگری اولیه روان‌شناختی</b>","",
            "این نتیجه «غربالگری» است، نه تشخیص قطعی. ابزارها با روش امتیازدهی استاندارد تفسیر شده‌اند؛ برای تصمیم تخصصی، مصاحبه و بررسی متخصص لازم است."]
@@ -1098,7 +1102,7 @@ async def psych_start(message,state):
     if not await require_channel(message): return
     cfg=json.load(open(os.path.join(os.path.dirname(__file__),"..","data","psychology.json"),encoding="utf-8"))
     await state.clear()
-    await state.update_data(cfg=cfg,phase="age",age=None,module="",index=0,answers=[],results={},functional_impact=None)
+    await state.update_data(cfg=cfg,phase="age",age=None,respondent=None,module="",index=0,answers=[],results={},functional_impact=None)
     await state.set_state(Psych.answering)
     await message.answer(
         "🧠 <b>ارزیابی اولیه روان‌شناختی</b>\n\n"+
@@ -1125,11 +1129,24 @@ async def psych_ans(message:Message,state:FSMContext):
         try: age=int(value.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹","0123456789")))
         except Exception: return await message.answer("لطفاً سن را به عدد کامل وارد کن؛ مثلاً 15.",reply_markup=nav([]))
         if age<8 or age>30: return await message.answer("برای این ارزیابی، سن باید بین ۸ تا ۳۰ سال باشد.",reply_markup=nav([]))
-        d["age"]=age; d["phase"]="instrument"
+        d["age"]=age
+        if age<=10:
+            d["phase"]="respondent"
+            await state.update_data(**d)
+            return await message.answer(cfg.get("young_respondent_prompt","برای سنین ۸ تا ۱۰ سال، این غربالگری باید توسط والد یا مراقب اصلی پاسخ داده شود."),reply_markup=nav(cfg.get("young_respondent_options",["والد/مراقب هستم","من دانش‌آموز هستم"])))
+        d["phase"]="instrument"
         if age<=10: return await _psych_begin_module(message,state,d,"psc_parent")
         if age<=17: return await _psych_begin_module(message,state,d,"psc_youth")
         return await _psych_begin_module(message,state,d,"phq9")
     module=d.get("module")
+    if d.get("phase")=="respondent":
+        options=cfg.get("young_respondent_options",[])
+        if value not in options: return await message.answer("لطفاً یکی از گزینه‌های نمایش‌داده‌شده را انتخاب کنید.",reply_markup=nav(options))
+        if value != options[0]:
+            await state.clear()
+            return await message.answer("برای سنین ۸ تا ۱۰ سال، این بخش باید توسط والد یا مراقب اصلی تکمیل شود. لطفاً بات را در اختیار والد/مراقب قرار دهید و دوباره ارزیابی را شروع کنید.",reply_markup=main_menu())
+        d["respondent"]="parent_or_caregiver"; d["phase"]="instrument"
+        return await _psych_begin_module(message,state,d,"psc_parent")
     if d.get("phase")=="phq_function":
         scale=cfg.get("functional_scale",[])
         if value not in scale:
@@ -1175,7 +1192,7 @@ async def psych_ans(message:Message,state:FSMContext):
         d["results"][module]={
             "instrument":"PHQ-9","score":total,"max_score":27,"level":_psych_level(total,"phq"),
             "followup_cutoff":phq_cutoff,"followup_positive":total>=phq_cutoff,
-            "item9_positive":d["answers"][8]>0,"respondent":"self"
+            "item9_positive":d["answers"][8]>0,"respondent":"self","age_band":"11-17" if d["age"]<=17 else "18-30"
         }
         if d["answers"][8]>0:
             await message.answer(
@@ -1191,7 +1208,7 @@ async def psych_ans(message:Message,state:FSMContext):
     gad_cutoff=cfg["anxiety_screen"].get("cutoff",10)
     d["results"]["gad7"]={
         "instrument":"GAD-7","score":total,"max_score":21,"level":_psych_level(total,"gad"),
-        "followup_cutoff":gad_cutoff,"followup_positive":total>=gad_cutoff,"respondent":"self"
+        "followup_cutoff":gad_cutoff,"followup_positive":total>=gad_cutoff,"respondent":"self","age_band":"11-17" if d["age"]<=17 else "18-30"
     }
     return await _psych_finish(message,state,d)
 
