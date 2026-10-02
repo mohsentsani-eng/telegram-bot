@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import db
+from . import psych_access
 
 
 app = FastAPI(title="Taranom Hamdeli Admin")
@@ -48,6 +49,7 @@ def page(title: str, body: str) -> HTMLResponse:
       <a href="/admin/registrations">💰 ثبت‌نام خدمات</a>
       <a href="/admin/kpi">📈 KPI تیم</a>
       <a href="/admin/access">🔐 دسترسی و تمدید</a>
+      <a href="/admin/psychology">🧠 ارزیابی روان‌شناختی</a>
     </div>
     """
 
@@ -278,6 +280,16 @@ def student(req: Request, sid: int):
         + psych_rows + "</table>"
         if psych_rows else "<h2>نتایج غربالگری روان‌شناختی</h2><p>هنوز نتیجه‌ای ثبت نشده است.</p>"
     )
+    access = db.get_student_access(sid)
+    psych_gate = None
+    if access and access["status"] == "active":
+        psych_gate = psych_access.prepare(sid, access["id"], "")
+    psych_status = "فعال و استفاده‌نشده" if psych_gate and psych_gate["allowed"] and psych_gate["reason"] == "available" else (
+        "ارزیابی نیمه‌تمام" if psych_gate and psych_gate["reason"] == "resume" else (
+            "نوبت مصرف‌شده" if psych_gate and psych_gate["reason"] == "limit_reached" else "بدون دسترسی فعال"
+        )
+    )
+    psych_access_id = int(access["id"]) if access and access["status"] == "active" else 0
     body = f"""
     <h1>{esc(s['first_name'])} {esc(s['last_name'])}</h1>
     <p>پایه: {esc(s['grade'])} | رشته: {esc(s['track'])} |
@@ -287,11 +299,96 @@ def student(req: Request, sid: int):
     <table><tr><th>درس</th><th>فصل</th><th>مبحث</th><th>تسلط</th><th>تلاش</th></tr>
     {mastery}</table>
     {psych_table}
+    <h2>کنترل ارزیابی روان‌شناختی</h2>
+    <div class="card">
+      <p><b>وضعیت نوبت فعلی:</b> {esc(psych_status)}</p>
+      <p class="muted">فعال‌سازی ارزیابی مجدد، نتیجه‌های قبلی را حذف نمی‌کند و تاریخچه در پرونده باقی می‌ماند.</p>
+      {("<form method='post' action='/admin/student/"+str(sid)+"/psych/reassessment'><input type='hidden' name='access_id' value='"+str(psych_access_id)+"'><button>🔄 فعال‌سازی یک نوبت ارزیابی مجدد</button></form>" if psych_access_id else "<p class='warn'>برای فعال‌سازی ارزیابی مجدد، ابتدا باید دسترسی خدمات تخصصی فعال باشد.</p>")}
+    </div>
     <p>تعداد ارزیابی‌ها: {len(snap['assessments'])} |
        روان‌شناختی: {len(snap['psych'])} |
        مهارت یادگیری: {len(snap['learning'])}</p>
     """
     return page("پرونده دانش‌آموز", body)
+
+
+@app.post("/admin/student/{student_id}/psych/reassessment")
+def psych_reassessment(req: Request, student_id: int, access_id: int = Form(0)):
+    if (g := guard(req)):
+        return g
+    ok = psych_access.grant_reassessment(
+        student_id,
+        access_id=access_id or None,
+        actor="admin",
+        note="فعال‌سازی دستی یک نوبت ارزیابی مجدد از پنل"
+    )
+    if not ok:
+        return page("خطا", "<div class='err'>دسترسی فعال برای این دانش‌آموز پیدا نشد.</div>")
+    return RedirectResponse(f"/admin/student/{student_id}", status_code=303)
+
+
+@app.get("/admin/psychology", response_class=HTMLResponse)
+def psychology_dashboard(req: Request):
+    if (g := guard(req)):
+        return g
+
+    c = db.conn()
+    rows = c.execute(
+        """SELECT s.id,s.first_name,s.last_name,s.grade,s.track,
+                  a.id access_id,a.plan_code,a.expires_at,
+                  e.used_attempts,e.max_attempts,e.status entitlement_status
+           FROM students s
+           LEFT JOIN student_access a
+             ON a.id=(SELECT a2.id FROM student_access a2
+                      WHERE a2.student_id=s.id AND a2.status='active'
+                        AND (a2.expires_at IS NULL OR a2.expires_at > CURRENT_TIMESTAMP)
+                      ORDER BY a2.expires_at DESC,a2.id DESC LIMIT 1)
+           LEFT JOIN psych_entitlements e
+             ON e.id=(SELECT e2.id FROM psych_entitlements e2
+                      WHERE e2.student_id=s.id AND e2.access_id=a.id
+                      LIMIT 1)
+           WHERE s.registered=1
+           ORDER BY s.id DESC
+           LIMIT 500"""
+    ).fetchall()
+    open_followups = c.execute(
+        """SELECT COUNT(*) n FROM followups
+           WHERE status='open' AND followup_type='psych_safety'"""
+    ).fetchone()["n"]
+    c.close()
+
+    trs=[]
+    for r in rows:
+        if not r["access_id"]:
+            status="بدون دسترسی"
+        elif not r["entitlement_status"]:
+            status="نوبت آماده"
+        elif r["used_attempts"] < r["max_attempts"]:
+            status="نوبت آماده"
+        else:
+            status="مصرف‌شده"
+        trs.append(
+            f"<tr><td><a href='/admin/student/{r['id']}'>{r['id']}</a></td>"
+            f"<td>{esc(r['first_name'])} {esc(r['last_name'])}</td>"
+            f"<td>{esc(r['grade'])} {esc(r['track'])}</td>"
+            f"<td>{esc(status)}</td><td>{esc(r['expires_at'])}</td>"
+            f"<td>{r['used_attempts'] or 0}/{r['max_attempts'] or 1}</td>"
+            f"<td><a class='btn' href='/admin/student/{r['id']}'>پرونده</a></td></tr>"
+        )
+    body=f"""
+    <h1>🧠 کنترل ارزیابی روان‌شناختی</h1>
+    <div class="grid">
+      <div class="card">پرونده‌های بررسی‌شده<div class="n">{len(rows)}</div></div>
+      <div class="card">پیگیری‌های ایمنی باز<div class="n">{open_followups}</div></div>
+    </div>
+    <div class="warn">
+      نتیجه‌ها فقط برای غربالگری و پیگیری تخصصی هستند؛ این پنل نیز تشخیص پزشکی/روان‌شناختی صادر نمی‌کند.
+    </div>
+    <h2>وضعیت نوبت‌ها</h2>
+    <table><tr><th>ID</th><th>دانش‌آموز</th><th>پایه/رشته</th><th>وضعیت</th><th>انقضای دسترسی</th><th>مصرف</th><th>عملیات</th></tr>
+    {''.join(trs) or '<tr><td colspan="7">داده‌ای وجود ندارد.</td></tr>'}</table>
+    """
+    return page("ارزیابی روان‌شناختی", body)
 
 
 @app.get("/admin/questions", response_class=HTMLResponse)
