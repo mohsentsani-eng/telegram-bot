@@ -696,6 +696,42 @@ async def r6(message:Message,state:FSMContext):
     await state.clear()
     await message.answer(text, reply_markup=main_menu())
 
+def access_plans():
+    """Return configurable access plans without hard-coding prices.
+    Prices are optional until the center decides the bot-service tariff.
+    """
+    plans=[]
+    for days, title in ((30,"۳۰ روزه"),(60,"۶۰ روزه"),(90,"۹۰ روزه")):
+        raw=os.getenv(f"ACCESS_PRICE_{days}","").strip()
+        price=None
+        if raw:
+            try:
+                price=max(0,int(float(raw.replace(",","").replace("٬",""))))
+            except Exception:
+                price=None
+        plans.append({"days":days,"title":title,"price":price})
+    return plans
+
+def access_plan_label(plan):
+    if plan["price"] is None:
+        return f"🔐 {plan['title']} — اعلام هزینه"
+    return f"🔐 {plan['title']} — {plan['price']:,} تومان"
+
+async def show_access_plans(message_or_callback, service_label="خدمات تخصصی"):
+    rows=[]
+    for p in access_plans():
+        rows.append([InlineKeyboardButton(text=access_plan_label(p),callback_data=f"access_plan:{p['days']}")])
+    rows.append([InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")])
+    text=(
+        f"💳 <b>پلن دسترسی {service_label}</b>\n\n"
+        "دسترسی خدمات تخصصی زمان‌دار است. یک پلن را انتخاب کنید تا درخواست شما برای مرکز ثبت شود.\n"
+        "در صورت تعیین قیمت در تنظیمات، مبلغ همین‌جا نمایش داده می‌شود؛ در غیر این صورت هزینه توسط مرکز اعلام خواهد شد."
+    )
+    if hasattr(message_or_callback,"message"):
+        await message_or_callback.message.answer(text,reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    else:
+        await message_or_callback.answer(text,reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
 async def require_service_access(message, service_label="این خدمت"):
     s=db.get_student_by_tg(message.from_user.id)
     if not s:
@@ -706,10 +742,9 @@ async def require_service_access(message, service_label="این خدمت"):
     db.create_access_request(s["id"], "renewal", f"درخواست دسترسی برای {service_label}")
     await message.answer(
         f"🔐 <b>اعتبار استفاده از «{service_label}» فعال نیست.</b>\n\n"
-        "برای ادامه استفاده از خدمات تخصصی، درخواست تمدید/فعال‌سازی را ثبت کنید.\n"
-        "پس از بررسی مرکز، شرایط و هزینه تمدید به شما اعلام می‌شود.",
+        "برای ادامه استفاده از خدمات تخصصی، یکی از پلن‌های تمدید/فعال‌سازی را انتخاب کنید.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 درخواست تمدید / فعال‌سازی",callback_data="access_request")],
+            [InlineKeyboardButton(text="💳 مشاهده پلن‌های تمدید",callback_data="access_request")],
             [InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]
         ])
     )
@@ -719,13 +754,33 @@ async def require_service_access(message, service_label="این خدمت"):
 async def access_request_callback(cq:CallbackQuery):
     await cq.answer()
     s=db.get_student_by_tg(cq.from_user.id)
-    if s:
-        db.create_access_request(s["id"],"renewal","درخواست تمدید توسط دانش‌آموز")
+    if not s:
+        return await cq.message.answer("ابتدا ثبت‌نام را تکمیل کنید.",reply_markup=main_menu())
+    return await show_access_plans(cq)
+
+@dp.callback_query(F.data.startswith("access_plan:"))
+async def access_plan_callback(cq:CallbackQuery):
+    await cq.answer()
+    try:
+        days=int(cq.data.split(":",1)[1])
+    except Exception:
+        return
+    if days not in {30,60,90}:
+        return
+    s=db.get_student_by_tg(cq.from_user.id)
+    if not s:
+        return await cq.message.answer("ابتدا ثبت‌نام را تکمیل کنید.",reply_markup=main_menu())
+    plan=next(p for p in access_plans() if p["days"]==days)
+    db.create_access_request(
+        s["id"],
+        f"access_{days}",
+        f"درخواست پلن {days} روزه" + (f"؛ مبلغ اعلامی {plan['price']} تومان" if plan["price"] is not None else "")
+    )
+    price_text=f"مبلغ: <b>{plan['price']:,} تومان</b>" if plan["price"] is not None else "مبلغ: پس از بررسی مرکز اعلام می‌شود."
     await cq.message.answer(
-        "✅ <b>درخواست شما ثبت شد.</b>\n\n"
-        "کارشناسان ترنم همدلی درخواست را بررسی می‌کنند و "
-        "<b>شرایط و هزینه تمدید</b> را برای شما ارسال خواهند کرد.\n\n"
-        "پس از تأیید و فعال‌سازی، دسترسی شما دوباره برقرار می‌شود.",
+        f"✅ <b>درخواست پلن {plan['title']} ثبت شد.</b>\n\n"
+        f"{price_text}\n"
+        "درخواست شما در پنل مرکز ثبت شده و پس از تأیید، اعتبار فعال می‌شود.",
         reply_markup=main_menu()
     )
 
@@ -1908,7 +1963,7 @@ async def access_expiry_worker():
                         "درخواست تمدید را ثبت کنید.\n\n"
                         "پس از بررسی مرکز، شرایط و هزینه تمدید برای شما ارسال می‌شود.",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="🔄 درخواست تمدید / فعال‌سازی",callback_data="access_request")],
+                            [InlineKeyboardButton(text="💳 مشاهده پلن‌های تمدید",callback_data="access_request")],
                             [InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]
                         ])
                     )
