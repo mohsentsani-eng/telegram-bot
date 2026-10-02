@@ -1102,15 +1102,15 @@ async def psych_start(message,state):
     if not await require_channel(message): return
     cfg=json.load(open(os.path.join(os.path.dirname(__file__),"..","data","psychology.json"),encoding="utf-8"))
     await state.clear()
-    await state.update_data(cfg=cfg,phase="age",age=None,respondent=None,module="",index=0,answers=[],results={},functional_impact=None)
+    await state.update_data(cfg=cfg,phase="consent",age=None,respondent=None,module="",index=0,answers=[],results={},functional_impact=None)
     await state.set_state(Psych.answering)
+    consent_options=cfg.get("consent_options",["موافقم و شروع می‌کنم","انصراف"])
     await message.answer(
         "🧠 <b>ارزیابی اولیه روان‌شناختی</b>\n\n"+
         cfg["disclaimer"]+"\n\n"+
-        cfg.get("psychometric_note","")+"\n\n"+
-        cfg["age_prompt"]+"\n\n"+
-        cfg.get("timeframe_prompt",""),
-        reply_markup=nav([])
+        "هدف این ارزیابی، شناسایی اولیه حوزه‌هایی است که ممکن است به بررسی بیشتر نیاز داشته باشند. نتیجه به‌تنهایی برای تشخیص، برچسب‌گذاری یا تصمیم درمانی استفاده نمی‌شود.\n\n"+
+        "با ادامه، با ثبت پاسخ‌های شما در پرونده مرکز برای استفاده در فرایند مشاوره موافقت می‌کنید. در هر مرحله می‌توانید از ارزیابی خارج شوید.",
+        reply_markup=nav(consent_options)
     )
 
 @dp.callback_query(F.data=="psych:counselor")
@@ -1125,6 +1125,16 @@ async def psych_counselor_callback(cq:CallbackQuery):
 @dp.message(Psych.answering)
 async def psych_ans(message:Message,state:FSMContext):
     d=await state.get_data(); cfg=d["cfg"]; value=(message.text or "").strip()
+    if d.get("phase")=="consent":
+        options=cfg.get("consent_options",["موافقم و شروع می‌کنم","انصراف"])
+        if value not in options:
+            return await message.answer("لطفاً یکی از گزینه‌های نمایش‌داده‌شده را انتخاب کنید.",reply_markup=nav(options))
+        if value != options[0]:
+            await state.clear()
+            return await message.answer("ارزیابی لغو شد. هر زمان خواستی می‌توانی دوباره شروع کنی.",reply_markup=main_menu())
+        d["phase"]="age"
+        await state.update_data(**d)
+        return await message.answer(cfg["age_prompt"]+"\n\n"+cfg.get("timeframe_prompt",""),reply_markup=nav([]))
     if d.get("phase")=="age":
         try: age=int(value.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹","0123456789")))
         except Exception: return await message.answer("لطفاً سن را به عدد کامل وارد کن؛ مثلاً 15.",reply_markup=nav([]))
