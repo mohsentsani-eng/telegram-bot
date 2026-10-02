@@ -729,6 +729,8 @@ async def show_profile(message):
         f"نقاط نیازمند توجه: {weak_txt}",reply_markup=main_menu())
 
 async def academic_start(message,state):
+    if not await require_service_access(message,"ارزیابی تحصیلی"):
+        return
     # Always acknowledge the tap first. The persistent Railway database may
     # contain legacy question rows, so preparation can take a moment.
     try:
@@ -942,6 +944,7 @@ async def answer(cq:CallbackQuery,state:FSMContext):
         await send_question(cq.message,state)
 
 async def psych_start(message,state):
+    if not await require_service_access(message,"ارزیابی روان‌شناختی"): return
     if not await require_channel(message): return
     cfg=json.load(open(os.path.join(os.path.dirname(__file__),"..","data","psychology.json"),encoding="utf-8"))
     await state.clear(); await state.update_data(cfg=cfg,domain=0,item=0,scores={}); await state.set_state(Psych.answering)
@@ -973,6 +976,7 @@ async def psych_ans(message:Message,state:FSMContext):
     await state.update_data(**d); await psych_next(message,state)
 
 async def learning_start(message,state):
+    if not await require_service_access(message,"ارزیابی مهارت‌های یادگیری"): return
     if not await require_channel(message): return
     cfg=json.load(open(os.path.join(os.path.dirname(__file__),"..","data","learning_skills.json"),encoding="utf-8"))
     await state.clear(); await state.update_data(cfg=cfg); await state.set_state(Learning.choose)
@@ -999,6 +1003,7 @@ async def l2(message:Message,state:FSMContext):
     await state.update_data(**d); await message.answer(d["skill"]["items"][d["index"]])
 
 async def ninth_start(message:Message,state:FSMContext):
+    if not await require_service_access(message,"انتخاب رشته نهم"): return
     if not await require_channel(message): return
     student=db.get_student_by_tg(message.from_user.id)
     if not student: return await begin_registration(message,state)
@@ -1058,6 +1063,7 @@ def konkurs_subject_prompt(group):
     )
 
 async def konkur_start(message,state):
+    if not await require_service_access(message,"انتخاب رشته کنکور"): return
     if not await require_channel(message): return
     student=db.get_student_by_tg(message.from_user.id)
     if not student: return await begin_registration(message,state)
