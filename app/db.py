@@ -938,6 +938,90 @@ def open_followup_exists(student_id, followup_type):
     c.close()
     return bool(row)
 
+
+def get_student_access(student_id):
+    c=conn()
+    row=c.execute("""SELECT * FROM student_access
+                     WHERE student_id=?
+                     ORDER BY CASE WHEN status='active' THEN 0 WHEN status='pending' THEN 1 ELSE 2 END,
+                              COALESCE(expires_at,'9999-12-31') DESC,id DESC
+                     LIMIT 1""",(int(student_id),)).fetchone()
+    c.close()
+    return row
+
+def has_active_access(student_id):
+    c=conn()
+    row=c.execute("""SELECT * FROM student_access
+                     WHERE student_id=? AND status='active'
+                       AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+                     ORDER BY expires_at DESC,id DESC LIMIT 1""",(int(student_id),)).fetchone()
+    c.close()
+    return row
+
+def create_access_request(student_id, plan_code="trial", note=""):
+    existing=get_student_access(student_id)
+    if existing and existing["status"]=="active" and (not existing["expires_at"] or existing["expires_at"] > __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")):
+        return existing["id"]
+    c=conn()
+    cur=c.execute("""INSERT INTO student_access(student_id,plan_code,status,note)
+                     VALUES(?,?, 'pending',?)""",(int(student_id),plan_code,note or ""))
+    rid=cur.lastrowid
+    c.execute("""INSERT INTO access_events(student_id,action,plan_code,actor,note)
+                 VALUES(?,?,?,?,?)""",(int(student_id),"request",plan_code,"student",note or ""))
+    c.commit(); c.close()
+    return rid
+
+def grant_access(student_id, days=30, plan_code="trial", actor="admin", note=""):
+    from datetime import datetime,timedelta
+    now=datetime.utcnow()
+    current=has_active_access(student_id)
+    start=now
+    if current and current["expires_at"]:
+        try:
+            exp=datetime.fromisoformat(str(current["expires_at"]))
+            start=max(now,exp)
+        except Exception:
+            pass
+    expires=start+timedelta(days=max(1,int(days)))
+    c=conn()
+    c.execute("""UPDATE student_access SET status='expired',updated_at=CURRENT_TIMESTAMP
+                 WHERE student_id=? AND status='active'""",(int(student_id),))
+    cur=c.execute("""INSERT INTO student_access
+                     (student_id,plan_code,status,starts_at,expires_at,approved_by,note)
+                     VALUES(?,?, 'active',?,?,?,?)""",
+                  (int(student_id),plan_code,start.strftime("%Y-%m-%d %H:%M:%S"),
+                   expires.strftime("%Y-%m-%d %H:%M:%S"),actor,note or ""))
+    c.execute("""INSERT INTO access_events
+                 (student_id,action,plan_code,starts_at,expires_at,actor,note)
+                 VALUES(?,?,?,?,?,?,?)""",
+              (int(student_id),"grant",plan_code,start.strftime("%Y-%m-%d %H:%M:%S"),
+               expires.strftime("%Y-%m-%d %H:%M:%S"),actor,note or ""))
+    c.commit(); rid=cur.lastrowid; c.close()
+    return rid
+
+def revoke_access(student_id, actor="admin", note=""):
+    c=conn()
+    c.execute("""UPDATE student_access SET status='revoked',updated_at=CURRENT_TIMESTAMP
+                 WHERE student_id=? AND status='active'""",(int(student_id),))
+    c.execute("""INSERT INTO access_events(student_id,action,actor,note)
+                 VALUES(?,?,?,?)""",(int(student_id),"revoke",actor,note or ""))
+    c.commit(); c.close()
+
+def list_access_requests(status="pending", limit=300):
+    c=conn()
+    rows=c.execute("""SELECT a.*,s.telegram_id,s.first_name,s.last_name,s.grade,s.track,s.phone
+                      FROM student_access a JOIN students s ON s.id=a.student_id
+                      WHERE a.status=? ORDER BY a.created_at ASC LIMIT ?""",(status,int(limit))).fetchall()
+    c.close(); return rows
+
+def expire_access():
+    c=conn()
+    c.execute("""UPDATE student_access SET status='expired',updated_at=CURRENT_TIMESTAMP
+                 WHERE status='active' AND expires_at IS NOT NULL AND expires_at <= CURRENT_TIMESTAMP""")
+    n=c.total_changes
+    c.commit(); c.close(); return n
+
+
 def stats():
     c=conn()
     out={}
