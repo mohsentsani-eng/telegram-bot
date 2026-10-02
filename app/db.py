@@ -987,6 +987,10 @@ def grant_access(student_id, days=30, plan_code="trial", actor="admin", note="")
             pass
     expires=start+timedelta(days=max(1,int(days)))
     c=conn()
+    # Any earlier pending request is resolved by this admin approval.
+    # Nothing is deleted; the request remains in the access history.
+    c.execute("""UPDATE student_access SET status='approved',updated_at=CURRENT_TIMESTAMP
+                 WHERE student_id=? AND status='pending'""",(int(student_id),))
     c.execute("""UPDATE student_access SET status='expired',updated_at=CURRENT_TIMESTAMP
                  WHERE student_id=? AND status='active'""",(int(student_id),))
     cur=c.execute("""INSERT INTO student_access
@@ -1031,6 +1035,12 @@ def list_expired_access_needing_notice(limit=200):
                       WHERE a.status='expired'
                         AND a.expires_at IS NOT NULL
                         AND a.expires_at <= CURRENT_TIMESTAMP
+                        AND NOT EXISTS (
+                            SELECT 1 FROM student_access current_access
+                            WHERE current_access.student_id=a.student_id
+                              AND current_access.status='active'
+                              AND (current_access.expires_at IS NULL OR current_access.expires_at > CURRENT_TIMESTAMP)
+                        )
                         AND NOT EXISTS (
                             SELECT 1 FROM access_events e
                             WHERE e.student_id=a.student_id
