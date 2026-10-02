@@ -1026,6 +1026,9 @@ async def _psych_finish(message,state,d):
         return await begin_registration(message,state)
     results=d.get("results",{})
     for key,item in results.items():
+        item["screening_version"]=d.get("cfg",{}).get("version","")
+        item["age"]=d.get("age")
+        item["assessment_type"]="screening"
         db.save_psych(s["id"],key,item["score"],item["level"],item)
     phq=results.get("phq9") or results.get("phq_a")
     gad=results.get("gad7")
