@@ -693,6 +693,29 @@ async def r6(message:Message,state:FSMContext):
     await state.clear()
     await message.answer(text, reply_markup=main_menu())
 
+async def require_service_access(message, service_label="این خدمت"):
+    s=db.get_student_by_tg(message.from_user.id)
+    if not s:
+        return False
+    db.expire_access()
+    if db.has_active_access(s["id"]):
+        return True
+    db.create_access_request(s["id"], "renewal", f"درخواست دسترسی برای {service_label}")
+    await message.answer("🔐 <b>دسترسی این بخش فعال نیست.</b>\n\nبرای استفاده از خدمات تخصصی، درخواست فعال‌سازی یا تمدید را ارسال کنید.",
+                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                             [InlineKeyboardButton(text="🔄 درخواست تمدید / فعال‌سازی",callback_data="access_request")],
+                             [InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]
+                         ]))
+    return False
+
+@dp.callback_query(F.data=="access_request")
+async def access_request_callback(cq:CallbackQuery):
+    await cq.answer()
+    s=db.get_student_by_tg(cq.from_user.id)
+    if s:
+        db.create_access_request(s["id"],"renewal","درخواست تمدید توسط دانش‌آموز")
+    await cq.message.answer("✅ درخواست شما ثبت شد. پس از تأیید مرکز، اعتبار جدید فعال می‌شود.",reply_markup=main_menu())
+
 async def show_profile(message):
     s=db.get_student_by_tg(message.from_user.id)
     snap=db.student_snapshot(s["id"])
