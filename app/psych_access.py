@@ -195,3 +195,53 @@ def set_consent(student_id):
 def reset_for_new_access(student_id, access_id):
     """Admin/renewal helper: a new active access record naturally gets a fresh attempt."""
     return prepare(student_id, access_id, "", MAX_ATTEMPTS_PER_ACCESS)
+
+
+
+def grant_reassessment(student_id, access_id=None, actor="admin", note=""):
+    """Allow one additional completed screening within an existing active access period.
+
+    This does not change the service-access expiry date and does not delete prior results.
+    It creates an audit event and resets only the entitlement counter for the selected
+    access record.
+    """
+    c = db.conn()
+    if access_id:
+        access = c.execute(
+            """SELECT * FROM student_access
+               WHERE id=? AND student_id=? AND status='active'
+                 AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)""",
+            (int(access_id), int(student_id)),
+        ).fetchone()
+    else:
+        access = c.execute(
+            """SELECT * FROM student_access
+               WHERE student_id=? AND status='active'
+                 AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+               ORDER BY expires_at DESC,id DESC LIMIT 1""",
+            (int(student_id),),
+        ).fetchone()
+
+    if not access:
+        c.close()
+        return False
+
+    c.execute(
+        """INSERT INTO psych_entitlements
+           (student_id,access_id,screening_version,max_attempts,used_attempts,status)
+           VALUES(?,?, '', 1, 0, 'available')
+           ON CONFLICT(student_id,access_id) DO UPDATE SET
+             used_attempts=0,
+             status='available',
+             updated_at=CURRENT_TIMESTAMP""",
+        (int(student_id), int(access["id"])),
+    )
+    c.execute(
+        """INSERT INTO access_events(student_id,action,plan_code,actor,note)
+           VALUES(?,?,?,?,?)""",
+        (int(student_id), "psych_reassessment_granted", access["plan_code"],
+         actor, note or "یک نوبت ارزیابی مجدد توسط مدیر فعال شد"),
+    )
+    c.commit()
+    c.close()
+    return True
