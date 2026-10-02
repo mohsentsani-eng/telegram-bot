@@ -1141,7 +1141,7 @@ def access_page(req: Request):
         rows += f"""<tr>
           <td>{r['student_id']}</td><td>{esc(r['first_name'])} {esc(r['last_name'])}</td>
           <td>{esc(r['grade'])}</td><td>{esc(r['track'])}</td>
-          <td>{esc(r['phone'])}</td><td>{esc(r['plan_code'])}</td>
+          <td>{esc(r['phone'])}</td><td>{esc({'access_30':'۳۰ روزه','access_60':'۶۰ روزه','access_90':'۹۰ روزه'}.get(r['plan_code'],r['plan_code']))}</td>
           <td><form method="post" action="/admin/access/grant">
              <input type="hidden" name="student_id" value="{r['student_id']}">
              <input type="hidden" name="plan_code" value="{esc(r['plan_code'])}">
@@ -1151,8 +1151,8 @@ def access_page(req: Request):
         </tr>"""
     body=f"""
     <h1>🔐 دسترسی و تمدید دانش‌آموزان</h1>
-    <p class="muted">دسترسی پیش‌فرض خودکار نیست. هر درخواست باید از پنل تأیید شود. تأیید ۳۰ روزه برای شروع در نظر گرفته شده و قابل تغییر است.</p>
-    <table><tr><th>ID</th><th>دانش‌آموز</th><th>پایه</th><th>رشته</th><th>تماس</th><th>نوع درخواست</th><th>عملیات</th></tr>
+    <p class="muted">درخواست‌های ۳۰/۶۰/۹۰ روزه از ربات ثبت می‌شوند. تأیید از این پنل انجام می‌شود؛ هیچ رکورد دانش‌آموز یا سابقه‌ای در این فرایند حذف نمی‌شود.</p>
+    <table><tr><th>ID</th><th>دانش‌آموز</th><th>پایه</th><th>رشته</th><th>تماس</th><th>پلن درخواستی</th><th>عملیات</th></tr>
     {rows or '<tr><td colspan="7">درخواست معلقی وجود ندارد.</td></tr>'}</table>
     <h2>دسترسی‌های فعال</h2>
     <table><tr><th>ID</th><th>دانش‌آموز</th><th>پایه</th><th>رشته</th><th>نوع</th><th>شروع</th><th>انقضا</th></tr>
