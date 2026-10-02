@@ -1019,37 +1019,131 @@ async def answer(cq:CallbackQuery,state:FSMContext):
         await state.update_data(**d)
         await send_question(cq.message,state)
 
+async def _psych_finish(message,state,d):
+    s=db.get_student_by_tg(message.from_user.id)
+    if not s:
+        await state.clear()
+        return await begin_registration(message,state)
+    results=d.get("results",{})
+    for key,item in results.items():
+        db.save_psych(s["id"],key,item["score"],item["level"],item)
+    phq=results.get("phq9") or results.get("phq_a")
+    gad=results.get("gad7")
+    psc=results.get("psc_parent") or results.get("psc_youth")
+    safety=bool((phq or {}).get("item9_positive"))
+    needs_followup=bool((psc or {}).get("positive") or (phq and phq["score"]>=10) or (gad and gad["score"]>=10) or safety)
+    if safety:
+        note="پاسخ مثبت در بخش ایمنی؛ ارزیابی تخصصی و پیگیری انسانی لازم است."
+        try:
+            if not db.open_followup_exists(s["id"],"psych_safety"):
+                db.create_followup(s["id"],"psych_safety","urgent",None,note)
+        except Exception as exc:
+            print(f"[PSYCH] safety follow-up creation failed: {type(exc).__name__}: {exc}",flush=True)
+    await state.clear()
+    lines=["🧠 <b>نتیجه غربالگری اولیه روان‌شناختی</b>","",
+           "این نتیجه «غربالگری» است، نه تشخیص قطعی. تفسیر نهایی باید با مصاحبه و نظر متخصص انجام شود."]
+    if psc:
+        label="نیازمند بررسی بیشتر" if psc["positive"] else "در محدوده غربالگری منفی"
+        lines += ["",f"🔹 مشکلات روانی-اجتماعی: <b>{psc['score']}</b> از ۷۰ — {label}"]
+    if phq:
+        lines += ["",f"🔹 علائم افسردگی: <b>{phq['score']}</b> از ۲۷ — {phq['level']}"]
+    if gad:
+        lines += [f"🔹 علائم اضطرابی: <b>{gad['score']}</b> از ۲۱ — {gad['level']}"]
+    if safety:
+        lines += ["","⚠️ <b>این پاسخ نیازمند پیگیری تخصصی است.</b>","بات از این پاسخ به‌تنهایی درباره سطح خطر نتیجه‌گیری نمی‌کند؛ ارزیابی انسانی باید جداگانه انجام شود."]
+    elif needs_followup:
+        lines += ["","📞 پیشنهاد: نتیجه در پرونده ثبت شده و بهتر است با مشاور/روان‌شناس بررسی شود."]
+    else:
+        lines += ["","✅ در این غربالگری علامت برجسته‌ای که به‌تنهایی نیاز به پیگیری فوری نشان دهد دیده نشد؛ این نتیجه جایگزین ارزیابی تخصصی نیست."]
+    await message.answer("\n".join(lines),reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📞 درخواست بررسی توسط مشاور",callback_data="psych:counselor")],
+        [InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]
+    ]))
+
+def _psych_level(score,kind):
+    if kind=="phq":
+        return "حداقل" if score<=4 else ("خفیف" if score<=9 else ("متوسط" if score<=14 else ("نسبتاً شدید" if score<=19 else "شدید")))
+    return "حداقل" if score<=4 else ("خفیف" if score<=9 else ("متوسط" if score<=14 else "شدید"))
+
+async def _psych_begin_module(message,state,d,module):
+    cfg=d["cfg"]
+    d["module"]=module; d["index"]=0; d["answers"]=[]
+    await state.update_data(**d)
+    titles={"psc_parent":"غربالگری روانی-اجتماعی کودک (نسخه والد/مراقب)",
+            "psc_youth":"غربالگری روانی-اجتماعی نوجوان",
+            "phq9":"غربالگری علائم افسردگی",
+            "phq_a":"غربالگری علائم افسردگی نوجوان",
+            "gad7":"غربالگری علائم اضطرابی"}
+    if module.startswith("psc"):
+        items=cfg["psc"]["items_parent"] if module=="psc_parent" else cfg["psc"]["items_youth"]; scale=cfg["scale_3"]
+    elif module in {"phq9","phq_a"}:
+        items=cfg["symptom_screen"]["items"]; scale=cfg["scale_4"]
+    else:
+        items=cfg["anxiety_screen"]["items"]; scale=cfg["scale_4"]
+    await message.answer(f"📌 <b>{titles[module]}</b>\n\nلطفاً با توجه به وضعیت اخیرت پاسخ بده.",reply_markup=nav(scale))
+    await message.answer(f"سؤال ۱ از {len(items)}\n{items[0]}",reply_markup=nav(scale))
+
 async def psych_start(message,state):
     if not await require_service_access(message,"ارزیابی روان‌شناختی"): return
     if not await require_channel(message): return
     cfg=json.load(open(os.path.join(os.path.dirname(__file__),"..","data","psychology.json"),encoding="utf-8"))
-    await state.clear(); await state.update_data(cfg=cfg,domain=0,item=0,scores={}); await state.set_state(Psych.answering)
-    await message.answer(cfg["disclaimer"],reply_markup=nav(cfg["scale"]))
-    await psych_next(message,state)
+    await state.clear()
+    await state.update_data(cfg=cfg,phase="age",age=None,module="",index=0,answers=[],results={})
+    await state.set_state(Psych.answering)
+    await message.answer("🧠 <b>ارزیابی اولیه روان‌شناختی</b>\n\n"+cfg["disclaimer"]+"\n\n"+cfg["age_prompt"],reply_markup=nav([]))
 
-async def psych_next(message,state):
-    d=await state.get_data(); cfg=d["cfg"]
-    if d["domain"]>=len(cfg["domains"]):
-        s=db.get_student_by_tg(message.from_user.id)
-        for domain_id,vals in d["scores"].items():
-            score=sum(vals)/max(1,len(vals))*100/3
-            level="مناسب" if score>=67 else ("متوسط" if score>=40 else "نیازمند توجه")
-            db.save_psych(s["id"],domain_id,score,level,vals)
-        await state.clear(); await message.answer("✅ ارزیابی ثبت شد و در پرونده شما ذخیره شد.\n\nاگر بخواهید، می‌توانید تحلیل هوشمند نتایج آزمون‌ها را دریافت کنید.",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🧠 تحلیل آزمون‌ها",callback_data="ai:tests")],[InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]])); return
-    dom=cfg["domains"][d["domain"]]
-    if d["item"]>=len(dom["items"]):
-        d["domain"]+=1; d["item"]=0; await state.update_data(**d); return await psych_next(message,state)
-    await message.answer(f"📌 {dom['title']}\n\n{dom['items'][d['item']]}")
+@dp.callback_query(F.data=="psych:counselor")
+async def psych_counselor_callback(cq:CallbackQuery):
+    await cq.answer()
+    s=db.get_student_by_tg(cq.from_user.id)
+    if not s:
+        return await cq.message.answer("ابتدا ثبت‌نام را کامل کنید.",reply_markup=main_menu())
+    db.request_counseling(s["id"],"psych_assessment_review","درخواست بررسی نتیجه غربالگری روان‌شناختی توسط مشاور")
+    await cq.message.answer("✅ درخواست بررسی تخصصی ثبت شد. نتیجه در پرونده شما ثبت است و مشاور آن را بررسی می‌کند.",reply_markup=main_menu())
 
 @dp.message(Psych.answering)
 async def psych_ans(message:Message,state:FSMContext):
-    d=await state.get_data(); cfg=d["cfg"]
-    if message.text not in cfg["scale"]: return
-    dom=cfg["domains"][d["domain"]]
-    val=cfg["scale"].index(message.text)
-    if dom.get("reverse"): val=3-val
-    d["scores"].setdefault(dom["id"],[]).append(val); d["item"]+=1
-    await state.update_data(**d); await psych_next(message,state)
+    d=await state.get_data(); cfg=d["cfg"]; value=(message.text or "").strip()
+    if d.get("phase")=="age":
+        try: age=int(value.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹","0123456789")))
+        except Exception: return await message.answer("لطفاً سن را به عدد کامل وارد کن؛ مثلاً 15.",reply_markup=nav([]))
+        if age<4 or age>30: return await message.answer("برای این ارزیابی، سن باید بین ۴ تا ۳۰ سال باشد.",reply_markup=nav([]))
+        d["age"]=age; d["phase"]="instrument"
+        if age<=10: return await _psych_begin_module(message,state,d,"psc_parent")
+        if age<=17: return await _psych_begin_module(message,state,d,"psc_youth")
+        return await _psych_begin_module(message,state,d,"phq9")
+    module=d.get("module")
+    if module.startswith("psc"):
+        scale=cfg["scale_3"]; items=cfg["psc"]["items_parent"] if module=="psc_parent" else cfg["psc"]["items_youth"]
+    elif module in {"phq9","phq_a"}:
+        scale=cfg["scale_4"]; items=cfg["symptom_screen"]["items"]
+    else:
+        scale=cfg["scale_4"]; items=cfg["anxiety_screen"]["items"]
+    if value not in scale: return await message.answer("لطفاً یکی از گزینه‌های نمایش‌داده‌شده را انتخاب کن.",reply_markup=nav(scale))
+    d["answers"].append(scale.index(value)); d["index"]+=1
+    if d["index"]<len(items):
+        await state.update_data(**d)
+        return await message.answer(f"سؤال {d['index']+1} از {len(items)}\n{items[d['index']]}",reply_markup=nav(scale))
+    total=sum(d["answers"])
+    if module=="psc_parent":
+        cutoff=cfg["psc"]["cutoff_parent_4_5"] if d["age"]<=5 else cfg["psc"]["cutoff_parent_6_10"]
+        d["results"]["psc_parent"]={"instrument":"PSC-35","score":total,"max_score":70,"cutoff":cutoff,"positive":total>=cutoff,"level":"نیازمند بررسی بیشتر" if total>=cutoff else "در محدوده غربالگری منفی"}
+        return await _psych_finish(message,state,d)
+    if module=="psc_youth":
+        d["results"]["psc_youth"]={"instrument":"Y-PSC / PSC-Y","score":total,"max_score":70,"cutoff":cfg["psc"]["cutoff_youth"],"positive":total>=cfg["psc"]["cutoff_youth"],"level":"نیازمند بررسی بیشتر" if total>=cfg["psc"]["cutoff_youth"] else "در محدوده غربالگری منفی"}
+        if d["results"]["psc_youth"]["positive"]: return await _psych_after_module(message,state,d)
+        return await _psych_finish(message,state,d)
+    if module in {"phq9","phq_a"}:
+        d["results"][module]={"instrument":"PHQ-9" if module=="phq9" else "PHQ-A","score":total,"max_score":27,"level":_psych_level(total,"phq"),"item9_positive":d["answers"][8]>0}
+        return await _psych_after_module(message,state,d)
+    d["results"]["gad7"]={"instrument":"GAD-7","score":total,"max_score":21,"level":_psych_level(total,"gad")}
+    return await _psych_finish(message,state,d)
+
+async def _psych_after_module(message,state,d):
+    module=d["module"]; d["answers"]=[]; d["index"]=0
+    if module=="psc_youth": return await _psych_begin_module(message,state,d,"phq_a")
+    if module in {"phq9","phq_a"}: return await _psych_begin_module(message,state,d,"gad7")
+    return await _psych_finish(message,state,d)
 
 async def learning_start(message,state):
     if not await require_service_access(message,"ارزیابی مهارت‌های یادگیری"): return
