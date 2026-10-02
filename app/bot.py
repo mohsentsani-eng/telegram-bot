@@ -1891,6 +1891,35 @@ async def quick_check_channel(cq: CallbackQuery):
         )
 
 DAILY_REPORT_TASK = None
+ACCESS_EXPIRY_TASK = None
+
+async def access_expiry_worker():
+    """Send one durable renewal notice after an entitlement expires."""
+    while True:
+        try:
+            db.expire_access()
+            rows=db.list_expired_access_needing_notice(200)
+            for row in rows:
+                try:
+                    await bot.send_message(
+                        row["telegram_id"],
+                        "⏰ <b>اعتبار خدمات تخصصی شما به پایان رسیده است.</b>\n\n"
+                        "برای ادامه استفاده از ارزیابی‌ها و خدمات تخصصی ترنم همدلی، "
+                        "درخواست تمدید را ثبت کنید.\n\n"
+                        "پس از بررسی مرکز، شرایط و هزینه تمدید برای شما ارسال می‌شود.",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="🔄 درخواست تمدید / فعال‌سازی",callback_data="access_request")],
+                            [InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]
+                        ])
+                    )
+                    db.mark_access_expiry_notice(row["id"],row["student_id"])
+                except Exception as exc:
+                    print(f"[ACCESS] expiry notice failed for student={row['student_id']}: {type(exc).__name__}: {exc}",flush=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[ACCESS] expiry worker failed: {type(exc).__name__}: {exc}",flush=True)
+        await asyncio.sleep(3600)
 
 @dp.message(F.text)
 async def menu(message:Message,state:FSMContext):
@@ -1926,6 +1955,8 @@ async def menu(message:Message,state:FSMContext):
 async def run_bot():
     # Polling is deliberately self-healing: temporary Telegram/network errors
     # should not take the service offline until Railway restarts the container.
+    global ACCESS_EXPIRY_TASK
+    ACCESS_EXPIRY_TASK=asyncio.create_task(access_expiry_worker())
     delay=5
     try:
         while True:
@@ -1947,5 +1978,11 @@ async def run_bot():
     finally:
         if DAILY_REPORT_TASK:
             DAILY_REPORT_TASK.cancel()
+        if ACCESS_EXPIRY_TASK:
+            ACCESS_EXPIRY_TASK.cancel()
+            try:
+                await ACCESS_EXPIRY_TASK
+            except asyncio.CancelledError:
+                pass
         try: await bot.session.close()
         except Exception: pass
