@@ -230,6 +230,7 @@ def ensure_question_bank_seed():
             base_dir / "question_bank_rebuild_v3.csv",
             base_dir / "question_bank_v4.csv",
             base_dir / "question_bank_curated_v1.csv",
+            base_dir / "question_bank_curated_v2.csv",
         ]
         c = conn()
         existing = set()
