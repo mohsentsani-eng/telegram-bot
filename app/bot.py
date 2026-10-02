@@ -1050,7 +1050,15 @@ async def _psych_finish(message,state,d):
         except Exception as exc:
             print(f"[PSYCH] safety follow-up creation failed: {type(exc).__name__}: {exc}",flush=True)
     summary_level="نیازمند پیگیری تخصصی" if needs_followup else "غربالگری بدون علامت برجسته"
-    summary={"assessment_type":"screening_summary","screening_version":screening_version,"age":d.get("age"),"results":results,"safety_positive":safety,"needs_followup":needs_followup,"summary_level":summary_level,"note":"غربالگری تشخیصی نیست و تفسیر نهایی با متخصص مرکز انجام می‌شود."}
+    domains=[]
+    if psc:
+        domains.append({"domain":"روانی-اجتماعی","positive":bool(psc.get("positive")),"score":psc.get("score"),"max_score":psc.get("max_score")})
+    if phq:
+        domains.append({"domain":"علائم افسردگی","positive":bool(phq.get("followup_positive")),"score":phq.get("score"),"max_score":phq.get("max_score")})
+    if gad:
+        domains.append({"domain":"علائم اضطرابی","positive":bool(gad.get("followup_positive")),"score":gad.get("score"),"max_score":gad.get("max_score")})
+    functional=max([int(x.get("functional_impact_score",0)) for x in results.values() if isinstance(x,dict) and x.get("functional_impact_score") is not None] or [0])
+    summary={"assessment_type":"screening_summary","screening_version":screening_version,"age":d.get("age"),"results":results,"domains":domains,"safety_positive":safety,"needs_followup":needs_followup,"functional_impact_max":functional,"summary_level":summary_level,"note":"غربالگری تشخیصی نیست و تفسیر نهایی با متخصص مرکز انجام می‌شود."}
     db.save_psych(s["id"],"summary",None,summary_level,summary)
     await state.clear()
     lines=["🧠 <b>نتیجه غربالگری اولیه روان‌شناختی</b>","",
