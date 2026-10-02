@@ -689,6 +689,7 @@ async def r6(message:Message,state:FSMContext):
         db.track_referral_event(message.from_user.id,"registration_complete",source,s_new["id"] if s_new else None)
         if s_new:
             db.upsert_lead_from_student(s_new["id"], source)
+            db.create_access_request(s_new["id"],"trial","درخواست دسترسی اولیه ۳۰ روزه پس از ثبت‌نام")
         text="✅ ثبت‌نام کامل شد. از این لحظه همه آزمون‌ها و نتایج به پرونده شما متصل می‌شوند."
     await state.clear()
     await message.answer(text, reply_markup=main_menu())
