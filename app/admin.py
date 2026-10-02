@@ -1135,6 +1135,7 @@ def access_page(req: Request):
         return g
     db.expire_access()
     pending=db.list_access_requests("pending",300)
+    active=db.list_access_requests("active",300)
     rows=""
     for r in pending:
         rows += f"""<tr>
@@ -1152,6 +1153,9 @@ def access_page(req: Request):
     <p class="muted">دسترسی پیش‌فرض خودکار نیست. هر درخواست باید از پنل تأیید شود. تأیید ۳۰ روزه برای شروع در نظر گرفته شده و قابل تغییر است.</p>
     <table><tr><th>ID</th><th>دانش‌آموز</th><th>پایه</th><th>رشته</th><th>تماس</th><th>نوع درخواست</th><th>عملیات</th></tr>
     {rows or '<tr><td colspan="7">درخواست معلقی وجود ندارد.</td></tr>'}</table>
+    <h2>دسترسی‌های فعال</h2>
+    <table><tr><th>ID</th><th>دانش‌آموز</th><th>پایه</th><th>رشته</th><th>نوع</th><th>شروع</th><th>انقضا</th></tr>
+    {"".join(f"<tr><td>{r['student_id']}</td><td>{esc(r['first_name'])} {esc(r['last_name'])}</td><td>{esc(r['grade'])}</td><td>{esc(r['track'])}</td><td>{esc(r['plan_code'])}</td><td>{esc(r['starts_at'])}</td><td>{esc(r['expires_at'])}</td></tr>" for r in active) or '<tr><td colspan="7">دسترسی فعالی وجود ندارد.</td></tr>'}</table>
     <div class="actions"><a class="btn" href="/admin/students">مشاهده دانش‌آموزان</a></div>
     """
     return page("دسترسی و تمدید",body)
