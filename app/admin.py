@@ -49,6 +49,7 @@ def page(title: str, body: str) -> HTMLResponse:
       <a href="/admin/registrations">💰 ثبت‌نام خدمات</a>
       <a href="/admin/kpi">📈 KPI تیم</a>
       <a href="/admin/access">🔐 دسترسی و تمدید</a>
+      <a href="/admin/access-search">🔎 جستجوی مستقیم دانش‌آموز و فعال‌سازی</a>
       <a href="/admin/psychology">🧠 ارزیابی روان‌شناختی</a>
     </div>
     """
@@ -1018,6 +1019,90 @@ def assign_counselor_admin(req: Request, student_id: int, counselor_id: int = Fo
     return RedirectResponse(f"/admin/student/{student_id}/reports", status_code=303)
 
 
+# ---------- Direct student access search ----------
+
+@app.get("/admin/access-search", response_class=HTMLResponse)
+def access_search(req: Request, q: str = ""):
+    if (g := guard(req)):
+        return g
+
+    q = (q or "").strip()
+    rows = []
+    if q:
+        c = db.conn()
+        like = f"%{q}%"
+        rows = c.execute(
+            """SELECT id, first_name, last_name, username, telegram_id, grade, track
+                      FROM students
+                     WHERE CAST(telegram_id AS TEXT) LIKE ?
+                        OR COALESCE(username,'') LIKE ?
+                        OR COALESCE(first_name,'') LIKE ?
+                        OR COALESCE(last_name,'') LIKE ?
+                        OR (COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')) LIKE ?
+                     ORDER BY id DESC LIMIT 100""",
+            (like, like, like, like, like),
+        ).fetchall()
+        c.close()
+
+    trs = []
+    for r in rows:
+        access = db.get_student_access(r["id"])
+        if access and access["status"] == "active":
+            access_text = f"فعال تا {esc(access['expires_at'])}"
+        elif access:
+            access_text = f"غیرفعال ({esc(access['status'])})"
+        else:
+            access_text = "بدون دسترسی"
+        trs.append(
+            f"""<tr>
+              <td>{r['id']}</td>
+              <td><a href="/admin/student/{r['id']}">{esc(r['first_name'])} {esc(r['last_name'])}</a></td>
+              <td>{esc(r['username'])}</td><td>{esc(r['telegram_id'])}</td>
+              <td>{esc(r['grade'])} {esc(r['track'])}</td><td>{access_text}</td>
+              <td><form method="post" action="/admin/access-search/grant" style="margin:0">
+                    <input type="hidden" name="student_id" value="{r['id']}">
+                    <input type="hidden" name="q" value="{esc(q)}">
+                    <input name="days" type="number" min="1" max="365" value="30" style="width:80px">
+                    <button>فعال‌سازی</button>
+                  </form></td>
+            </tr>"""
+        )
+
+    body = f"""
+    <h1>🔎 جستجوی مستقیم دانش‌آموز</h1>
+    <p class="muted">این بخش فقط پرونده موجود را پیدا می‌کند؛ رکورد جدید نمی‌سازد و اطلاعات قبلی را حذف یا بازنویسی نمی‌کند.</p>
+    <form method="get" class="card">
+      <label>نام، نام خانوادگی، نام کاربری تلگرام یا Telegram ID</label>
+      <input name="q" value="{esc(q)}" placeholder="مثلاً MohsenTsani یا محسن تصدیقی" autofocus>
+      <button>جستجو</button>
+    </form>
+    <table>
+      <tr><th>ID</th><th>نام</th><th>Username</th><th>Telegram ID</th><th>پایه/رشته</th><th>دسترسی</th><th>عملیات</th></tr>
+      {''.join(trs) if trs else '<tr><td colspan="7">برای شروع، عبارت جستجو را وارد کنید.</td></tr>'}
+    </table>
+    <div class="actions"><a class="btn" href="/admin/access">بازگشت به دسترسی و تمدید</a></div>
+    """
+    return page("جستجوی مستقیم دانش‌آموز", body)
+
+
+@app.post("/admin/access-search/grant")
+def access_search_grant(req: Request, student_id: int = Form(...), days: int = Form(30), q: str = Form("")):
+    if (g := guard(req)):
+        return g
+    student = db.get_student(student_id)
+    if not student:
+        return page("خطا", "<div class='err'>دانش‌آموز یافت نشد.</div>")
+    days = max(1, min(int(days), 365))
+    db.grant_access(
+        student_id,
+        days,
+        plan_code=f"access_{days}",
+        actor="admin",
+        note=f"فعال‌سازی مستقیم {days} روزه از جستجوی دانش‌آموز",
+    )
+    return RedirectResponse(f"/admin/access-search?q={q}", status_code=303)
+
+
 # ---------- CRM / Call-center / Sales ----------
 
 @app.get("/admin/crm", response_class=HTMLResponse)
@@ -1281,4 +1366,3 @@ def access_grant(req: Request, student_id: int = Form(...), days: int = Form(30)
     plan_code=(plan_code or "approved").strip()[:50]
     db.grant_access(student_id,days,plan_code=plan_code,actor="admin",note=f"فعال‌سازی {days} روزه از پنل")
     return RedirectResponse("/admin/access",status_code=303)
-
