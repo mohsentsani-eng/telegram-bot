@@ -187,6 +187,11 @@ def init_db():
         ON questions(active, subject);
     CREATE INDEX IF NOT EXISTS idx_questions_active_chapter_topic
         ON questions(active, chapter, topic);
+    CREATE INDEX IF NOT EXISTS idx_attempts_student_question
+        ON attempts(student_id, question_id);
+    CREATE INDEX IF NOT EXISTS idx_attempts_student_assessment
+        ON attempts(student_id, assessment_id);
+
     CREATE INDEX IF NOT EXISTS idx_questions_active_difficulty
         ON questions(active, difficulty);
     """)
