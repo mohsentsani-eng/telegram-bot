@@ -1144,7 +1144,8 @@ def access_page(req: Request):
           <td>{esc(r['phone'])}</td><td>{esc(r['plan_code'])}</td>
           <td><form method="post" action="/admin/access/grant">
              <input type="hidden" name="student_id" value="{r['student_id']}">
-             <input name="days" value="30" style="width:70px">
+             <input type="hidden" name="plan_code" value="{esc(r['plan_code'])}">
+             <input name="days" value="{30 if r['plan_code']!='access_60' and r['plan_code']!='access_90' else (60 if r['plan_code']=='access_60' else 90)}" style="width:70px">
              <button>تأیید و فعال‌سازی</button>
           </form></td>
         </tr>"""
@@ -1161,10 +1162,11 @@ def access_page(req: Request):
     return page("دسترسی و تمدید",body)
 
 @app.post("/admin/access/grant")
-def access_grant(req: Request, student_id: int = Form(...), days: int = Form(30)):
+def access_grant(req: Request, student_id: int = Form(...), days: int = Form(30), plan_code: str = Form("approved")):
     if (g := guard(req)):
         return g
     days=max(1,min(int(days),365))
-    db.grant_access(student_id,days,plan_code="approved",actor="admin",note=f"فعال‌سازی {days} روزه از پنل")
+    plan_code=(plan_code or "approved").strip()[:50]
+    db.grant_access(student_id,days,plan_code=plan_code,actor="admin",note=f"فعال‌سازی {days} روزه از پنل")
     return RedirectResponse("/admin/access",status_code=303)
 
