@@ -1024,6 +1024,29 @@ def expire_access():
     n=c.total_changes
     c.commit(); c.close(); return n
 
+def list_expired_access_needing_notice(limit=200):
+    c=conn()
+    rows=c.execute("""SELECT a.*,s.telegram_id,s.first_name,s.last_name
+                      FROM student_access a JOIN students s ON s.id=a.student_id
+                      WHERE a.status='expired'
+                        AND a.expires_at IS NOT NULL
+                        AND a.expires_at <= CURRENT_TIMESTAMP
+                        AND NOT EXISTS (
+                            SELECT 1 FROM access_events e
+                            WHERE e.student_id=a.student_id
+                              AND e.action='expiry_notice'
+                              AND e.note=('access_id=' || a.id)
+                        )
+                      ORDER BY a.expires_at ASC LIMIT ?""",(int(limit),)).fetchall()
+    c.close()
+    return rows
+
+def mark_access_expiry_notice(access_id, student_id):
+    c=conn()
+    c.execute("""INSERT INTO access_events(student_id,action,actor,note)
+                 VALUES(?,?,?,?)""",(int(student_id),"expiry_notice","system",f"access_id={int(access_id)}"))
+    c.commit(); c.close()
+
 
 def stats():
     c=conn()
