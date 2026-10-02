@@ -853,18 +853,23 @@ async def ac4(message:Message,state:FSMContext):
     if message.text not in DIFFS: return
     if message.text != "تشخیصی": f["difficulty"]=message.text
     else: f.pop("difficulty",None)
-    exact=db.list_questions(f)
+    s=db.get_student_by_tg(message.from_user.id)
+    if not s:
+        return await begin_registration(message,state)
+
+    # Only unseen questions are eligible for this student. Previous attempts
+    # remain in the database and are never deleted or reset.
+    exact=db.list_questions_for_student(s["id"],f)
     if len(exact) < 10:
-        # A chapter/topic may temporarily have fewer than 10 items in an older
-        # imported bank. Fall back to the same grade + track + subject so the
-        # student never gets a false "bank disabled" message.
+        # If a narrow chapter/topic is exhausted, widen only within the same
+        # grade + track + subject, still excluding every previously attempted question.
         broad={k:v for k,v in f.items() if k in {"grade","track","subject"} and v not in (None,"")}
-        pool=db.list_questions(broad)
+        pool=db.list_questions_for_student(s["id"],broad)
         if len(pool) >= 10:
             exact=pool
         else:
             label="، ".join(str(f.get(k)) for k in ["grade","track","subject","chapter","topic","difficulty"] if f.get(k))
-            await message.answer(f"⚠️ برای «{label}» هنوز سؤال کافی در بانک ثبت نشده است.\n\nاین مورد باید از پنل مدیریت تکمیل شود.",reply_markup=nav(DIFFS))
+            await message.answer(f"⚠️ برای «{label}» کمتر از ۱۰ سؤال جدید و پاسخ‌نداده برای شما باقی مانده است.\n\nتکرار سؤال انجام نمی‌شود؛ لطفاً بانک این مبحث را تکمیل کنید.",reply_markup=nav(DIFFS))
             return
     random.shuffle(exact); qs=exact[:10]
     s=db.get_student_by_tg(message.from_user.id)
