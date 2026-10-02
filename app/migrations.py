@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from . import db
 
-TARGET_VERSION = 3
+TARGET_VERSION = 4
 
 def _backup_path():
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -318,6 +318,50 @@ def migrate():
         cols=[r[1] for r in c.execute("PRAGMA table_info(registrations)").fetchall()]
         if "sales_agent_id" not in cols:
             c.execute("ALTER TABLE registrations ADD COLUMN sales_agent_id INTEGER")
+
+    # v4: persistent psychological-assessment entitlement and resumable sessions.
+    # This is additive and non-destructive: no student, assessment, or psych result rows are altered.
+    if current < 4:
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS psych_entitlements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            access_id INTEGER NOT NULL,
+            screening_version TEXT,
+            max_attempts INTEGER NOT NULL DEFAULT 1,
+            used_attempts INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'available',
+            consent_at TEXT,
+            last_completed_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(student_id,access_id),
+            FOREIGN KEY(student_id) REFERENCES students(id),
+            FOREIGN KEY(access_id) REFERENCES student_access(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_psych_entitlements_student
+            ON psych_entitlements(student_id,status,updated_at);
+
+        CREATE TABLE IF NOT EXISTS psych_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            access_id INTEGER NOT NULL,
+            screening_version TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            state_json TEXT NOT NULL,
+            consent_at TEXT,
+            started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            completed_at TEXT,
+            FOREIGN KEY(student_id) REFERENCES students(id),
+            FOREIGN KEY(access_id) REFERENCES student_access(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_psych_sessions_student_status
+            ON psych_sessions(student_id,status,updated_at);
+        """)
+        c.execute(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES(4,CURRENT_TIMESTAMP)"
+        )
 
     c.execute("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(?,CURRENT_TIMESTAMP)", (TARGET_VERSION,))
     c.commit()
