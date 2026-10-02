@@ -533,6 +533,32 @@ def list_questions(filters=None):
             seen.add(key); out.append(r)
     return out
 
+def list_questions_for_student(student_id, filters=None):
+    """Return active questions not previously attempted by this student.
+
+    This is deliberately non-destructive: attempts remain historical records,
+    and only the exam candidate pool is filtered for the current student.
+    """
+    filters = filters or {}
+    c = conn()
+    clauses = ["q.active=1", "NOT EXISTS (SELECT 1 FROM attempts a WHERE a.student_id=? AND a.question_id=q.id)"]
+    params = [int(student_id)]
+    for k in ("grade","track","subject","book","chapter","topic","difficulty"):
+        v = filters.get(k)
+        if v not in (None, ""):
+            clauses.append(f"q.{k}=?")
+            params.append(str(v))
+    rows = c.execute("SELECT q.* FROM questions q WHERE " + " AND ".join(clauses) + " ORDER BY q.id DESC", tuple(params)).fetchall()
+    c.close()
+    out=[]; seen=set()
+    for r in rows:
+        key=_question_key(dict(r))
+        if key in seen:
+            continue
+        if _matches(r, filters):
+            seen.add(key); out.append(r)
+    return out
+
 def distinct_question_field(field, filters=None):
     allowed={"grade","track","subject","book","chapter","topic","difficulty"}
     if field not in allowed: return []
