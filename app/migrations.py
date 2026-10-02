@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from . import db
 
-TARGET_VERSION = 2
+TARGET_VERSION = 3
 
 def _backup_path():
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -253,6 +253,40 @@ def migrate():
     """)
     _add_column(c, "ai_analyses", "structured_json", "TEXT")
     _add_column(c, "ai_analyses", "status", "TEXT DEFAULT 'completed'")
+
+    # v3: time-limited student service access / monetization entitlement.
+    if current < 3:
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS student_access (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            plan_code TEXT NOT NULL DEFAULT 'trial',
+            status TEXT NOT NULL DEFAULT 'pending',
+            starts_at TEXT,
+            expires_at TEXT,
+            approved_by TEXT,
+            note TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(student_id) REFERENCES students(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_student_access_student_status
+            ON student_access(student_id,status,expires_at);
+        CREATE TABLE IF NOT EXISTS access_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            plan_code TEXT,
+            starts_at TEXT,
+            expires_at TEXT,
+            actor TEXT,
+            note TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(student_id) REFERENCES students(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_access_events_student
+            ON access_events(student_id,created_at);
+        """)
 
     # v2: call-center agents, call logs and sales attribution.
     if current < 2:
