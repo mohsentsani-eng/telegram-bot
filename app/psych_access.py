@@ -47,9 +47,9 @@ def prepare(student_id, access_id, screening_version, max_attempts=MAX_ATTEMPTS_
 
     session = c.execute(
         """SELECT * FROM psych_sessions
-           WHERE student_id=? AND status='active'
+           WHERE student_id=? AND access_id=? AND status='active'
            ORDER BY id DESC LIMIT 1""",
-        (int(student_id),),
+        (int(student_id), int(access_id)),
     ).fetchone()
     c.close()
 
