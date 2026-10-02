@@ -264,6 +264,20 @@ def student(req: Request, sid: int):
         for x in snap["mastery"]
     )
 
+    psych_rows = ""
+    for p in snap["psych"]:
+        psych_rows += (
+            f"<tr><td>{esc(p['domain'])}</td>"
+            f"<td>{esc(p['score'])}</td><td>{esc(p['level'])}</td>"
+            f"<td>{esc(p['created_at'])}</td></tr>"
+        )
+    psych_table = (
+        "<h2>نتایج غربالگری روان‌شناختی</h2>"
+        "<p class='muted'>این جدول نتیجه غربالگری است و جایگزین تشخیص یا مصاحبه تخصصی نیست.</p>"
+        "<table><tr><th>ابزار</th><th>امتیاز</th><th>سطح</th><th>تاریخ</th></tr>"
+        + psych_rows + "</table>"
+        if psych_rows else "<h2>نتایج غربالگری روان‌شناختی</h2><p>هنوز نتیجه‌ای ثبت نشده است.</p>"
+    )
     body = f"""
     <h1>{esc(s['first_name'])} {esc(s['last_name'])}</h1>
     <p>پایه: {esc(s['grade'])} | رشته: {esc(s['track'])} |
@@ -272,6 +286,7 @@ def student(req: Request, sid: int):
     <h2>تسلط در مباحث</h2>
     <table><tr><th>درس</th><th>فصل</th><th>مبحث</th><th>تسلط</th><th>تلاش</th></tr>
     {mastery}</table>
+    {psych_table}
     <p>تعداد ارزیابی‌ها: {len(snap['assessments'])} |
        روان‌شناختی: {len(snap['psych'])} |
        مهارت یادگیری: {len(snap['learning'])}</p>
