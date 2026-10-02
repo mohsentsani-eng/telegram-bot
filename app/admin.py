@@ -47,6 +47,7 @@ def page(title: str, body: str) -> HTMLResponse:
       <a href="/admin/crm">📇 CRM و پیگیری</a>
       <a href="/admin/registrations">💰 ثبت‌نام خدمات</a>
       <a href="/admin/kpi">📈 KPI تیم</a>
+      <a href="/admin/access">🔐 دسترسی و تمدید</a>
     </div>
     """
 
@@ -1126,3 +1127,40 @@ def call_center_agent_add(req: Request, name: str = Form(...), phone: str = Form
     if (g := guard(req)): return g
     db.add_call_center_agent(name,phone,monthly_base,commission_rate/100)
     return RedirectResponse("/admin/call-center/agents",status_code=303)
+
+
+@app.get("/admin/access", response_class=HTMLResponse)
+def access_page(req: Request):
+    if (g := guard(req)):
+        return g
+    db.expire_access()
+    pending=db.list_access_requests("pending",300)
+    rows=""
+    for r in pending:
+        rows += f"""<tr>
+          <td>{r['student_id']}</td><td>{esc(r['first_name'])} {esc(r['last_name'])}</td>
+          <td>{esc(r['grade'])}</td><td>{esc(r['track'])}</td>
+          <td>{esc(r['phone'])}</td><td>{esc(r['plan_code'])}</td>
+          <td><form method="post" action="/admin/access/grant">
+             <input type="hidden" name="student_id" value="{r['student_id']}">
+             <input name="days" value="30" style="width:70px">
+             <button>تأیید و فعال‌سازی</button>
+          </form></td>
+        </tr>"""
+    body=f"""
+    <h1>🔐 دسترسی و تمدید دانش‌آموزان</h1>
+    <p class="muted">دسترسی پیش‌فرض خودکار نیست. هر درخواست باید از پنل تأیید شود. تأیید ۳۰ روزه برای شروع در نظر گرفته شده و قابل تغییر است.</p>
+    <table><tr><th>ID</th><th>دانش‌آموز</th><th>پایه</th><th>رشته</th><th>تماس</th><th>نوع درخواست</th><th>عملیات</th></tr>
+    {rows or '<tr><td colspan="7">درخواست معلقی وجود ندارد.</td></tr>'}</table>
+    <div class="actions"><a class="btn" href="/admin/students">مشاهده دانش‌آموزان</a></div>
+    """
+    return page("دسترسی و تمدید",body)
+
+@app.post("/admin/access/grant")
+def access_grant(req: Request, student_id: int = Form(...), days: int = Form(30)):
+    if (g := guard(req)):
+        return g
+    days=max(1,min(int(days),365))
+    db.grant_access(student_id,days,plan_code="approved",actor="admin",note=f"فعال‌سازی {days} روزه از پنل")
+    return RedirectResponse("/admin/access",status_code=303)
+
