@@ -1157,7 +1157,7 @@ async def psych_ans(message:Message,state:FSMContext):
             return await message.answer("برای سنین ۸ تا ۱۰ سال، این بخش باید توسط والد یا مراقب اصلی تکمیل شود. لطفاً بات را در اختیار والد/مراقب قرار دهید و دوباره ارزیابی را شروع کنید.",reply_markup=main_menu())
         d["respondent"]="parent_or_caregiver"; d["phase"]="instrument"
         return await _psych_begin_module(message,state,d,"psc_parent")
-    if d.get("phase")=="phq_function":
+    if d.get("phase") in {"phq_function","gad_function"}:
         scale=cfg.get("functional_scale",[])
         if value not in scale:
             return await message.answer("لطفاً یکی از گزینه‌های نمایش‌داده‌شده را انتخاب کن.",reply_markup=nav(scale))
@@ -1220,7 +1220,12 @@ async def psych_ans(message:Message,state:FSMContext):
         "instrument":"GAD-7","score":total,"max_score":21,"level":_psych_level(total,"gad"),
         "followup_cutoff":gad_cutoff,"followup_positive":total>=gad_cutoff,"respondent":"self","age_band":"11-17" if d["age"]<=17 else "18-30"
     }
-    return await _psych_finish(message,state,d)
+    d["phase"]="gad_function"
+    await state.update_data(**d)
+    return await message.answer(
+        cfg.get("functional_prompt","اگر هر یک از مشکلات بالا را داشته‌ای، این مشکلات چقدر انجام کارهای روزمره، درس و مدرسه/کار، امور خانه یا ارتباط با دیگران را برایت دشوار کرده است؟"),
+        reply_markup=nav(cfg.get("functional_scale",[]))
+    )
 
 async def _psych_after_module(message,state,d):
     module=d["module"]; d["answers"]=[]; d["index"]=0
