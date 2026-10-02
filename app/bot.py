@@ -1031,7 +1031,13 @@ async def _psych_finish(message,state,d):
     gad=results.get("gad7")
     psc=results.get("psc_parent") or results.get("psc_youth")
     safety=bool((phq or {}).get("item9_positive"))
-    needs_followup=bool((psc or {}).get("positive") or (phq and phq["score"]>=10) or (gad and gad["score"]>=10) or safety)
+    needs_followup=bool(
+        (psc or {}).get("positive") or
+        (phq and phq["score"]>=10) or
+        (gad and gad["score"]>=10) or
+        (phq and phq.get("functional_impact_score",0)>=1) or
+        safety
+    )
     if safety:
         note="پاسخ مثبت در بخش ایمنی؛ ارزیابی تخصصی و پیگیری انسانی لازم است."
         try:
@@ -1080,7 +1086,8 @@ async def _psych_begin_module(message,state,d,module):
         items=cfg["symptom_screen"]["items"]; scale=cfg["scale_4"]
     else:
         items=cfg["anxiety_screen"]["items"]; scale=cfg["scale_4"]
-    await message.answer(f"📌 <b>{titles[module]}</b>\n\nلطفاً با توجه به وضعیت اخیرت پاسخ بده.",reply_markup=nav(scale))
+    role_note = "این بخش باید توسط والد/مراقب پاسخ داده شود." if module=="psc_parent" else "پاسخ‌ها را بر اساس تجربه خودت ثبت کن."
+    await message.answer(f"📌 <b>{titles[module]}</b>\n\n{role_note}\n\nلطفاً با توجه به وضعیت اخیرت پاسخ بده.",reply_markup=nav(scale))
     await message.answer(f"سؤال ۱ از {len(items)}\n{items[0]}",reply_markup=nav(scale))
 
 async def psych_start(message,state):
@@ -1088,9 +1095,16 @@ async def psych_start(message,state):
     if not await require_channel(message): return
     cfg=json.load(open(os.path.join(os.path.dirname(__file__),"..","data","psychology.json"),encoding="utf-8"))
     await state.clear()
-    await state.update_data(cfg=cfg,phase="age",age=None,module="",index=0,answers=[],results={})
+    await state.update_data(cfg=cfg,phase="age",age=None,module="",index=0,answers=[],results={},functional_impact=None)
     await state.set_state(Psych.answering)
-    await message.answer("🧠 <b>ارزیابی اولیه روان‌شناختی</b>\n\n"+cfg["disclaimer"]+"\n\n"+cfg["age_prompt"],reply_markup=nav([]))
+    await message.answer(
+        "🧠 <b>ارزیابی اولیه روان‌شناختی</b>\n\n"+
+        cfg["disclaimer"]+"\n\n"+
+        cfg.get("psychometric_note","")+"\n\n"+
+        cfg["age_prompt"]+"\n\n"+
+        cfg.get("timeframe_prompt",""),
+        reply_markup=nav([])
+    )
 
 @dp.callback_query(F.data=="psych:counselor")
 async def psych_counselor_callback(cq:CallbackQuery):
@@ -1107,12 +1121,21 @@ async def psych_ans(message:Message,state:FSMContext):
     if d.get("phase")=="age":
         try: age=int(value.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹","0123456789")))
         except Exception: return await message.answer("لطفاً سن را به عدد کامل وارد کن؛ مثلاً 15.",reply_markup=nav([]))
-        if age<4 or age>30: return await message.answer("برای این ارزیابی، سن باید بین ۴ تا ۳۰ سال باشد.",reply_markup=nav([]))
+        if age<8 or age>30: return await message.answer("برای این ارزیابی، سن باید بین ۸ تا ۳۰ سال باشد.",reply_markup=nav([]))
         d["age"]=age; d["phase"]="instrument"
         if age<=10: return await _psych_begin_module(message,state,d,"psc_parent")
         if age<=17: return await _psych_begin_module(message,state,d,"psc_youth")
         return await _psych_begin_module(message,state,d,"phq9")
     module=d.get("module")
+    if d.get("phase")=="phq_function":
+        scale=cfg.get("functional_scale",[])
+        if value not in scale:
+            return await message.answer("لطفاً یکی از گزینه‌های نمایش‌داده‌شده را انتخاب کن.",reply_markup=nav(scale))
+        d["results"][module]["functional_impact_score"]=scale.index(value)
+        d["results"][module]["functional_impact_level"]=value
+        d["phase"]="instrument"
+        await state.update_data(**d)
+        return await _psych_after_module(message,state,d)
     if module.startswith("psc"):
         scale=cfg["scale_3"]; items=cfg["psc"]["items_parent"] if module=="psc_parent" else cfg["psc"]["items_youth"]
     elif module in {"phq9","phq_a"}:
@@ -1134,8 +1157,18 @@ async def psych_ans(message:Message,state:FSMContext):
         if d["results"]["psc_youth"]["positive"]: return await _psych_after_module(message,state,d)
         return await _psych_finish(message,state,d)
     if module in {"phq9","phq_a"}:
-        d["results"][module]={"instrument":"PHQ-9" if module=="phq9" else "PHQ-A","score":total,"max_score":27,"level":_psych_level(total,"phq"),"item9_positive":d["answers"][8]>0}
-        return await _psych_after_module(message,state,d)
+        d["results"][module]={"instrument":"PHQ-9","score":total,"max_score":27,"level":_psych_level(total,"phq"),"item9_positive":d["answers"][8]>0}
+        if d["answers"][8]>0:
+            await message.answer(
+                "⚠️ <b>پاسخ ایمنی شما مثبت بوده است.</b>\n\n"
+                "این بات نمی‌تواند شدت یا فوریت خطر را تشخیص دهد. اگر همین حالا احساس می‌کنی ممکن است به خودت آسیب بزنی، تنها نمان و فوراً با یک بزرگسال/فرد قابل اعتماد و خدمات اورژانسی یا سلامت روان محل زندگی تماس بگیر."
+            )
+        d["phase"]="phq_function"
+        await state.update_data(**d)
+        return await message.answer(
+            cfg.get("functional_prompt","این مشکلات چقدر زندگی روزمره را دشوار کرده است؟"),
+            reply_markup=nav(cfg.get("functional_scale",[]))
+        )
     d["results"]["gad7"]={"instrument":"GAD-7","score":total,"max_score":21,"level":_psych_level(total,"gad")}
     return await _psych_finish(message,state,d)
 
