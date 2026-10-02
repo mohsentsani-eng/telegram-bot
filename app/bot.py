@@ -690,7 +690,9 @@ async def r6(message:Message,state:FSMContext):
         if s_new:
             db.upsert_lead_from_student(s_new["id"], source)
             db.create_access_request(s_new["id"],"trial","درخواست دسترسی اولیه ۳۰ روزه پس از ثبت‌نام")
-        text="✅ ثبت‌نام کامل شد. از این لحظه همه آزمون‌ها و نتایج به پرونده شما متصل می‌شوند."
+        text=("✅ ثبت‌نام شما کامل شد.\n\n"
+      "🔐 دسترسی خدمات تخصصی پس از تأیید مرکز فعال می‌شود.\n"
+      "🎯 ارزیابی سریع همچنان برای شما در دسترس است.")
     await state.clear()
     await message.answer(text, reply_markup=main_menu())
 
@@ -702,11 +704,15 @@ async def require_service_access(message, service_label="این خدمت"):
     if db.has_active_access(s["id"]):
         return True
     db.create_access_request(s["id"], "renewal", f"درخواست دسترسی برای {service_label}")
-    await message.answer("🔐 <b>دسترسی این بخش فعال نیست.</b>\n\nبرای استفاده از خدمات تخصصی، درخواست فعال‌سازی یا تمدید را ارسال کنید.",
-                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                             [InlineKeyboardButton(text="🔄 درخواست تمدید / فعال‌سازی",callback_data="access_request")],
-                             [InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]
-                         ]))
+    await message.answer(
+        f"🔐 <b>اعتبار استفاده از «{service_label}» فعال نیست.</b>\n\n"
+        "برای ادامه استفاده از خدمات تخصصی، درخواست تمدید/فعال‌سازی را ثبت کنید.\n"
+        "پس از بررسی مرکز، شرایط و هزینه تمدید به شما اعلام می‌شود.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 درخواست تمدید / فعال‌سازی",callback_data="access_request")],
+            [InlineKeyboardButton(text="🏠 منوی اصلی",callback_data="ai:home")]
+        ])
+    )
     return False
 
 @dp.callback_query(F.data=="access_request")
@@ -715,16 +721,30 @@ async def access_request_callback(cq:CallbackQuery):
     s=db.get_student_by_tg(cq.from_user.id)
     if s:
         db.create_access_request(s["id"],"renewal","درخواست تمدید توسط دانش‌آموز")
-    await cq.message.answer("✅ درخواست شما ثبت شد. پس از تأیید مرکز، اعتبار جدید فعال می‌شود.",reply_markup=main_menu())
+    await cq.message.answer(
+        "✅ <b>درخواست شما ثبت شد.</b>\n\n"
+        "کارشناسان ترنم همدلی درخواست را بررسی می‌کنند و "
+        "<b>شرایط و هزینه تمدید</b> را برای شما ارسال خواهند کرد.\n\n"
+        "پس از تأیید و فعال‌سازی، دسترسی شما دوباره برقرار می‌شود.",
+        reply_markup=main_menu()
+    )
 
 async def show_profile(message):
     s=db.get_student_by_tg(message.from_user.id)
     snap=db.student_snapshot(s["id"])
     weak=snap["mastery"][:5]
     weak_txt="، ".join([f"{x['subject']} / {x['topic']} ({round(x['mastery_score']*100)}٪)" for x in weak]) or "هنوز داده کافی ثبت نشده"
+    access=db.get_student_access(s["id"])
+    if access and access["status"]=="active":
+        access_text=f"🟢 دسترسی خدمات تخصصی: فعال تا {access['expires_at']}"
+    elif access and access["status"]=="pending":
+        access_text="🟡 دسترسی خدمات تخصصی: درخواست شما در انتظار تأیید مرکز است."
+    else:
+        access_text="🔴 دسترسی خدمات تخصصی: فعال نیست."
     await message.answer(
         f"👤 پرونده شما\n\nنام: {s['first_name']} {s['last_name']}\nپایه: {s['grade']}\nرشته: {s['track'] or '—'}\n"
         f"شهر: {s['city'] or '—'}\nامتیاز: {s['points']}\n\n"
+        f"{access_text}\n\n"
         f"ارزیابی‌های تحصیلی: {len(snap['assessments'])}\n"
         f"نتایج روان‌شناختی: {len(snap['psych'])}\nمهارت‌های یادگیری: {len(snap['learning'])}\n"
         f"نقاط نیازمند توجه: {weak_txt}",reply_markup=main_menu())
