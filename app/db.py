@@ -960,8 +960,11 @@ def has_active_access(student_id):
 
 def create_access_request(student_id, plan_code="trial", note=""):
     existing=get_student_access(student_id)
-    if existing and existing["status"]=="active" and (not existing["expires_at"] or existing["expires_at"] > __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")):
-        return existing["id"]
+    if existing and existing["status"] in {"active","pending"}:
+        if existing["status"]=="active" and existing["expires_at"] and existing["expires_at"] <= __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"):
+            pass
+        else:
+            return existing["id"]
     c=conn()
     cur=c.execute("""INSERT INTO student_access(student_id,plan_code,status,note)
                      VALUES(?,?, 'pending',?)""",(int(student_id),plan_code,note or ""))
