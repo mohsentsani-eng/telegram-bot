@@ -18,7 +18,7 @@ from .counselor_portal import router as counselor_router, _hash_password
 app = FastAPI(title="Taranom Hamdeli Admin")
 app.add_middleware(
     SessionMiddleware,
-    secret_key=os.getenv("ADMIN_SECRET", "change-me"),
+    secret_key=os.getenv("ADMIN_SECRET") or secrets.token_urlsafe(48),
 )
 
 app.include_router(counselor_router)
@@ -146,12 +146,15 @@ def login(
     username: str = Form(...),
     password: str = Form(...),
 ):
-    good_user = secrets.compare_digest(
-        username, os.getenv("ADMIN_USERNAME", "admin")
-    )
-    good_pass = secrets.compare_digest(
-        password, os.getenv("ADMIN_PASSWORD", "change-me")
-    )
+    configured_user = os.getenv("ADMIN_USERNAME", "").strip()
+    configured_pass = os.getenv("ADMIN_PASSWORD", "")
+    if not configured_user or not configured_pass or not os.getenv("ADMIN_SECRET"):
+        return page(
+            "تنظیم امنیت",
+            "<div class='err'>ورود مدیر تا زمان تنظیم ADMIN_USERNAME، ADMIN_PASSWORD و ADMIN_SECRET در تنظیمات محیط اجرا غیرفعال است.</div>",
+        )
+    good_user = secrets.compare_digest(username, configured_user)
+    good_pass = secrets.compare_digest(password, configured_pass)
 
     if good_user and good_pass:
         req.session["admin"] = True
