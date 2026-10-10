@@ -4,6 +4,7 @@ import io
 import secrets
 import html
 import json
+import sqlite3
 
 from fastapi import FastAPI, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
@@ -11,6 +12,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import db
 from . import psych_access
+from .counselor_portal import router as counselor_router, _hash_password
 
 
 app = FastAPI(title="Taranom Hamdeli Admin")
@@ -18,6 +20,8 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("ADMIN_SECRET", "change-me"),
 )
+
+app.include_router(counselor_router)
 
 
 def esc(x):
@@ -1021,16 +1025,28 @@ def add_note(req: Request, student_id: int, note: str = Form(...)):
 def counselors(req: Request):
     if (g := guard(req)): return g
     rows=db.list_counselors(False)
-    trs="".join(f"<tr><td>{r['id']}</td><td>{esc(r['name'])}</td><td>{esc(r['telegram_id'])}</td><td>{'فعال' if r['active'] else 'غیرفعال'}</td></tr>" for r in rows)
+    c=db.conn()
+    accounts={r["counselor_id"]:r for r in c.execute("SELECT counselor_id,username,active FROM counselor_accounts").fetchall()}
+    c.close()
+    trs="".join(
+        f"<tr><td>{r['id']}</td><td>{esc(r['name'])}</td><td>{esc(r['telegram_id'])}</td>"
+        f"<td>{'فعال' if r['active'] else 'غیرفعال'}</td><td>{esc(accounts.get(r['id'],{}).get('username','تنظیم نشده'))}</td>"
+        f"<td><form method='post' action='/admin/counselors/account'>"
+        f"<input type='hidden' name='counselor_id' value='{r['id']}'>"
+        f"<input name='username' placeholder='نام کاربری جدید' required>"
+        f"<input type='password' name='password' placeholder='رمز حداقل ۱۲ کاراکتر' minlength='12' required>"
+        f"<button>ایجاد/بازنشانی دسترسی</button></form></td></tr>" for r in rows)
     body=f"""
     <h1>👨‍🏫 مشاوران</h1>
+    <p class="muted">برای ورود اختصاصی هر مشاور، نام کاربری و رمز قوی (حداقل ۱۲ کاراکتر) تنظیم کنید. رمز ذخیره‌شده به صورت هش است و قابل مشاهده نیست.</p>
+    <p class="ok">پنل مشاور: <a href="/counselor/login">/counselor/login</a></p>
     <form method="post" action="/admin/counselors/add" class="card">
       <label>نام مشاور</label><input name="name" required>
-      <label>Telegram ID (اختیاری)</label><input name="telegram_id">
+      <label>Telegram ID (اختیاری، برای اعلان)</label><input name="telegram_id" inputmode="numeric">
       <button>افزودن مشاور</button>
     </form>
-    <table><tr><th>ID</th><th>نام</th><th>Telegram ID</th><th>وضعیت</th></tr>
-    {trs if trs else '<tr><td colspan="4">هنوز مشاوری ثبت نشده است.</td></tr>'}</table>
+    <table><tr><th>ID</th><th>نام</th><th>Telegram ID</th><th>وضعیت</th><th>نام کاربری پنل</th><th>ایجاد/بازنشانی ورود</th></tr>
+    {trs if trs else '<tr><td colspan="6">هنوز مشاوری ثبت نشده است.</td></tr>'}</table>
     """
     return page("مشاوران",body)
 
@@ -1040,6 +1056,30 @@ def add_counselor(req: Request, name: str = Form(...), telegram_id: str = Form("
     tid=int(telegram_id) if telegram_id.strip().isdigit() else None
     db.add_counselor(name.strip(),tid)
     return RedirectResponse("/admin/counselors", status_code=303)
+
+@app.post("/admin/counselors/account")
+def set_counselor_account(req: Request, counselor_id: int = Form(...), username: str = Form(...), password: str = Form(...)):
+    if (g := guard(req)): return g
+    username=username.strip()
+    if len(username)<4 or len(password)<12:
+        return page("داده نامعتبر", "<div class='err'>نام کاربری حداقل ۴ و رمز عبور حداقل ۱۲ کاراکتر باشد.</div><a class='btn' href='/admin/counselors'>بازگشت</a>")
+    c=db.conn()
+    exists=c.execute("SELECT id FROM counselors WHERE id=? AND active=1",(counselor_id,)).fetchone()
+    if not exists:
+        c.close()
+        return page("مشاور یافت نشد", "<div class='err'>مشاور فعال پیدا نشد.</div>")
+    try:
+        c.execute("""INSERT INTO counselor_accounts(counselor_id,username,password_hash,active)
+                     VALUES(?,?,?,1)
+                     ON CONFLICT(counselor_id) DO UPDATE SET username=excluded.username,
+                     password_hash=excluded.password_hash,active=1,updated_at=CURRENT_TIMESTAMP""",
+                  (counselor_id,username,_hash_password(password)))
+        c.commit()
+    except sqlite3.IntegrityError:
+        c.close()
+        return page("نام کاربری تکراری", "<div class='err'>این نام کاربری قبلاً استفاده شده است؛ نام دیگری انتخاب کنید.</div><a class='btn' href='/admin/counselors'>بازگشت</a>")
+    c.close()
+    return RedirectResponse("/admin/counselors",status_code=303)
 
 @app.post("/admin/student/{student_id}/assign-counselor")
 def assign_counselor_admin(req: Request, student_id: int, counselor_id: int = Form(...)):
