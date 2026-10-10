@@ -101,6 +101,7 @@ class AIState(StatesGroup):
 
 class DailyReport(StatesGroup):
     study_hours=State(); plan_execution=State(); practice_count=State(); main_problem=State(); satisfaction=State(); tomorrow_goal=State()
+    mood=State(); stress=State(); motivation=State()
 
 class Planner(StatesGroup):
     daily_hours=State()
@@ -495,11 +496,43 @@ async def daily_report_satisfaction(message:Message,state:FSMContext):
     await message.answer("۶) مهم‌ترین هدف تو برای فردا چیست؟",reply_markup=nav([]))
 
 @dp.message(DailyReport.tomorrow_goal)
-async def daily_report_finish(message:Message,state:FSMContext):
+async def daily_report_goal(message:Message,state:FSMContext):
     if message.text in {BACK,HOME}: return await global_back(message,state)
     goal=(message.text or "").strip()[:1000]
     if not goal: return await message.answer("لطفاً هدف فردا را وارد کن.")
+    await state.update_data(tomorrow_goal=goal)
+    await state.set_state(DailyReport.mood)
+    await message.answer("۷) حال روحی امروزت چطور بود؟",reply_markup=nav(["🙂 خوب","😐 معمولی","🙁 گرفته","😟 خیلی بد"]))
+
+@dp.message(DailyReport.mood)
+async def daily_report_mood(message:Message,state:FSMContext):
+    if message.text in {BACK,HOME}: return await global_back(message,state)
+    allowed={"🙂 خوب","😐 معمولی","🙁 گرفته","😟 خیلی بد"}
+    if message.text not in allowed:
+        return await message.answer("لطفاً یکی از گزینه‌ها را انتخاب کن.",reply_markup=nav(["🙂 خوب","😐 معمولی","🙁 گرفته","😟 خیلی بد"]))
+    await state.update_data(mood=message.text)
+    await state.set_state(DailyReport.stress)
+    await message.answer("۸) امروز چقدر استرس یا نگرانی داشتی؟\n۱ = خیلی کم، ۵ = خیلی زیاد",reply_markup=nav(["۱","۲","۳","۴","۵"]))
+
+@dp.message(DailyReport.stress)
+async def daily_report_stress(message:Message,state:FSMContext):
+    if message.text in {BACK,HOME}: return await global_back(message,state)
+    value=(message.text or "").strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹","0123456789"))
+    if value not in {"1","2","3","4","5"}:
+        return await message.answer("لطفاً عددی از ۱ تا ۵ انتخاب کن.",reply_markup=nav(["۱","۲","۳","۴","۵"]))
+    await state.update_data(stress=int(value))
+    await state.set_state(DailyReport.motivation)
+    await message.answer("۹) امروز چقدر انگیزه برای درس خواندن داشتی؟\n۱ = خیلی کم، ۵ = خیلی زیاد",reply_markup=nav(["۱","۲","۳","۴","۵"]))
+
+@dp.message(DailyReport.motivation)
+async def daily_report_finish(message:Message,state:FSMContext):
+    if message.text in {BACK,HOME}: return await global_back(message,state)
+    value=(message.text or "").strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹","0123456789"))
+    if value not in {"1","2","3","4","5"}:
+        return await message.answer("لطفاً عددی از ۱ تا ۵ انتخاب کن.",reply_markup=nav(["۱","۲","۳","۴","۵"]))
+    await state.update_data(motivation=int(value))
     data=await state.get_data()
+    goal=str(data.get("tomorrow_goal","")).strip()
     s=db.get_student_by_tg(message.from_user.id)
     if not s:
         await state.clear()
@@ -514,6 +547,9 @@ async def daily_report_finish(message:Message,state:FSMContext):
         "main_problem":data["main_problem"],
         "satisfaction":satisfaction,
         "tomorrow_goal":goal,
+        "mood":data["mood"],
+        "stress":data["stress"],
+        "motivation":data["motivation"],
     }
     report_id=db.save_daily_report(
         s["id"],date,data["study_hours"],data["plan_execution"],[],
@@ -557,6 +593,9 @@ async def daily_report_finish(message:Message,state:FSMContext):
         f"⏱️ مطالعه مفید: {float(data['study_hours']):.1f} ساعت\n"
         f"📈 اجرای برنامه: {float(data['plan_execution']):.0f}٪\n"
         f"📝 تست/تمرین: {int(data['practice_count'])}\n"
+        f"🙂 حال روحی: {data['mood']}\n"
+        f"😟 استرس: {data['stress']}/۵\n"
+        f"🔥 انگیزه: {data['motivation']}/۵\n"
         f"📊 وضعیت پیگیری: {label}\n\n"
         "🎯 <b>پیشنهادهای فردا</b>\n"+rec_text+
         "\n\n🗂️ گزارش در پرونده آموزشی و CRM ثبت شد.",
