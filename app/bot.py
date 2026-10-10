@@ -584,6 +584,20 @@ async def daily_report_finish(message:Message,state:FSMContext):
             db.create_followup(s["id"],"daily_report_followup","high" if status=="urgent_review" else "normal",None,reason)
         if lead_id:
             db.set_lead_status(lead_id,"followup")
+    # Notify the assigned counselor without sending sensitive student details to Telegram.
+    try:
+        assigned=db.active_counselor(s["id"])
+        if assigned and assigned["telegram_id"]:
+            portal_url=os.getenv("PUBLIC_BASE_URL","https://telegram-bot-production-5605.up.railway.app").rstrip("/")+"/counselor"
+            urgency="🔴 نیازمند بررسی سریع" if status=="urgent_review" else ("🟠 نیازمند پیگیری" if status=="followup" else "📝 گزارش جدید")
+            await bot.send_message(
+                assigned["telegram_id"],
+                f"{urgency}\nیک گزارش روزانه جدید در پرونده دانش‌آموز ثبت شده است.\n"
+                f"برای مشاهده امن جزئیات وارد پنل اختصاصی شوید: {portal_url}"
+            )
+    except Exception as exc:
+        print(f"[COUNSELOR] daily report notification failed: {type(exc).__name__}: {exc}",flush=True)
+
     await state.clear()
     label=_daily_report_label(status)
     rec_text="\n".join(f"• {x}" for x in recommendations[:3]) or "• برای فردا یک هدف مشخص تعیین کن."
