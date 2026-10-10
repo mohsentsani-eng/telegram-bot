@@ -714,8 +714,10 @@ async def r6(message:Message,state:FSMContext):
     payload={**data,"phone":phone,"telegram_id":message.from_user.id,"username":message.from_user.username,
              "parent_name":"","parent_phone":""}
     renew=bool(payload.pop("renew",False))
-    if renew:
-        # ثبت‌نام مجدد باید همان پرونده را به‌روزرسانی کند، نه اینکه دانش‌آموز تکراری بسازد.
+    existing=db.get_student_by_tg(message.from_user.id)
+    source=payload.get("referral_source","") or ""
+    if renew and existing:
+        # اگر پرونده قبلی وجود دارد، همان را به‌روزرسانی کن.
         payload.pop("referral_source",None)
         db.update_student(message.from_user.id, first_name=payload["first_name"],
                           last_name=payload["last_name"], grade=payload["grade"],
@@ -723,15 +725,16 @@ async def r6(message:Message,state:FSMContext):
                           phone=payload.get("phone","") or "")
         text="✅ اطلاعات شما با موفقیت به‌روزرسانی شد و پرونده قبلی حفظ شد."
     else:
+        # رفع باگ مهم: اگر کاربر «ثبت‌نام مجدد» بزند ولی رکورد قبلی پاک شده باشد،
+        # update_student هیچ رکوردی نمی‌سازد؛ بنابراین باید پرونده جدید ایجاد شود.
         db.create_student(payload)
         s_new=db.get_student_by_tg(message.from_user.id)
-        source=payload.get("referral_source","") or ""
         db.track_referral_event(message.from_user.id,"registration_complete",source,s_new["id"] if s_new else None)
         if s_new:
             db.upsert_lead_from_student(s_new["id"], source)
             db.create_access_request(s_new["id"],"trial","درخواست دسترسی اولیه ۳۰ روزه پس از ثبت‌نام")
-        text=("✅ ثبت‌نام شما کامل شد.\n\n"
-      "🔐 دسترسی خدمات تخصصی پس از تأیید مرکز فعال می‌شود.\n"
+        text=("✅ پرونده شما با موفقیت ثبت شد.\n\n"
+      "🔐 درخواست دسترسی اولیه ۳۰ روزه در پنل مرکز ثبت می‌شود و پس از تأیید مرکز فعال خواهد شد.\n"
       "🎯 ارزیابی سریع همچنان برای شما در دسترس است.")
     await state.clear()
     await message.answer(text, reply_markup=main_menu())
