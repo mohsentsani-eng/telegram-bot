@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from . import db
 
-TARGET_VERSION = 4
+TARGET_VERSION = 5
 
 def _backup_path():
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -362,6 +362,24 @@ def migrate():
         c.execute(
             "INSERT INTO schema_migrations(version, applied_at) VALUES(4,CURRENT_TIMESTAMP)"
         )
+
+    # v5: counselor web accounts; additive only, existing students and counseling history remain intact.
+    if current < 5:
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS counselor_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            counselor_id INTEGER NOT NULL UNIQUE,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(counselor_id) REFERENCES counselors(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_counselor_accounts_active
+            ON counselor_accounts(active,username);
+        """)
+        c.execute("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(5,CURRENT_TIMESTAMP)")
 
     c.execute("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(?,CURRENT_TIMESTAMP)", (TARGET_VERSION,))
     c.commit()
