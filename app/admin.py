@@ -32,6 +32,29 @@ def guard(req: Request):
     return None if auth(req) else RedirectResponse("/admin/login", status_code=303)
 
 
+@app.get("/", response_class=HTMLResponse)
+def public_home():
+    return HTMLResponse("""<!doctype html>
+<html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مرکز خدمات روانشناسی و مشاوره ترنم همدلی | سبزوار</title>
+<meta name="description" content="مرکز خدمات روانشناسی و مشاوره ترنم همدلی در سبزوار؛ مشاوره تحصیلی، برنامه‌ریزی درسی، ارزیابی اولیه و راهنمایی انتخاب رشته.">
+<meta name="robots" content="index,follow"><link rel="canonical" href="https://telegram-bot-production-5605.up.railway.app/">
+<style>body{font-family:Tahoma,Arial,sans-serif;margin:0;background:#f5f7fb;color:#172033;line-height:2}main{max-width:900px;margin:40px auto;padding:24px}.panel{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:24px;margin-bottom:18px}h1,h2{color:#174ea6}a.button{display:inline-block;background:#174ea6;color:white;text-decoration:none;padding:10px 18px;border-radius:10px;margin:6px 4px}footer{color:#64748b;font-size:13px;text-align:center}</style>
+</head><body><main><section class="panel"><h1>ترنم همدلی؛ همراه دانش‌آموز و خانواده در مسیر رشد تحصیلی</h1>
+<p>مرکز خدمات روانشناسی و مشاوره ترنم همدلی در سبزوار؛ مشاوره تحصیلی، برنامه‌ریزی درسی، مهارت‌های یادگیری و راهنمایی انتخاب رشته.</p>
+<a class="button" href="https://t.me/TaranomHamDeliBot">ورود به ربات آموزشی ترنم همدلی</a> <a class="button" href="https://t.me/tarnoomhamdeli">کانال آموزشی</a></section>
+<section class="panel"><h2>خدمات ما</h2><ul><li>مشاوره تحصیلی و برنامه‌ریزی درسی</li><li>ارزیابی اولیه توانمندی‌ها و مهارت‌های یادگیری</li><li>راهنمایی انتخاب رشته نهم و کنکور</li><li>پیگیری روند مطالعه و همکاری با خانواده‌ها</li></ul></section>
+<section class="panel"><h2>تماس با مرکز</h2><p>سبزوار، کاشفی شمالی، کاشفی ۱۴، پلاک ۱۷</p><p>تلفن: <a href="tel:05144244845">۰۵۱-۴۴۲۴۴۸۴۵</a></p></section>
+<footer>مرکز خدمات روانشناسی و مشاوره ترنم همدلی — سبزوار</footer></main></body></html>""", media_type="text/html; charset=utf-8")
+
+@app.get("/robots.txt", response_class=HTMLResponse)
+def robots_txt():
+    return HTMLResponse("User-agent: *\\nAllow: /\\nDisallow: /admin\\nSitemap: https://telegram-bot-production-5605.up.railway.app/sitemap.xml\\n", media_type="text/plain; charset=utf-8")
+
+@app.get("/sitemap.xml", response_class=HTMLResponse)
+def sitemap_xml():
+    return HTMLResponse('<?xml version="1.0" encoding="UTF-8"?>' '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://telegram-bot-production-5605.up.railway.app/</loc></url></urlset>', media_type="application/xml; charset=utf-8")
+
 def page(title: str, body: str) -> HTMLResponse:
     nav = """
     <div class="nav">
@@ -84,7 +107,7 @@ def page(title: str, body: str) -> HTMLResponse:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{esc(title)}</title>
+<meta name="robots" content="noindex,nofollow,noarchive">\n<title>{esc(title)}</title>
 <style>{css}</style>
 </head>
 <body>
