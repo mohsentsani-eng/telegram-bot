@@ -936,13 +936,19 @@ def student_reports(req: Request, student_id: int):
         return g
     c=db.conn()
     s=c.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone()
-    rows=c.execute("SELECT * FROM daily_reports WHERE student_id=? ORDER BY report_date DESC LIMIT 60",(student_id,)).fetchall()
+    rows=c.execute("""SELECT dr.*,
+        (SELECT answer FROM daily_report_answers a WHERE a.report_id=dr.id AND a.question_key='mood') AS mood,
+        (SELECT answer FROM daily_report_answers a WHERE a.report_id=dr.id AND a.question_key='stress') AS stress,
+        (SELECT answer FROM daily_report_answers a WHERE a.report_id=dr.id AND a.question_key='motivation') AS motivation
+        FROM daily_reports dr WHERE dr.student_id=? ORDER BY dr.report_date DESC LIMIT 60""",(student_id,)).fetchall()
     c.close()
     if not s:
         return page("پرونده", "<div class='err'>دانش‌آموز پیدا نشد.</div>")
     trs="".join(
         f"<tr><td>{r['report_date']}</td><td>{r['study_hours'] or 0:g}</td><td>{r['plan_execution'] or 0:g}%</td>"
-        f"<td>{r['practice_count'] or 0}</td><td>{esc(r['main_problem'])}</td><td>{esc(r['status'])}</td>"
+        f"<td>{r['practice_count'] or 0}</td><td>{esc(r['main_problem'])}</td>"
+        f"<td>{esc(r['mood'] or '—')}</td><td>{esc(r['stress'] or '—')}/۵</td>"
+        f"<td>{esc(r['motivation'] or '—')}/۵</td><td>{esc(r['status'])}</td>"
         f"<td>{esc(r['analysis_status'])}</td></tr>" for r in rows
     )
     counselors_rows="".join(f"<option value='{r['id']}'>{esc(r['name'])}</option>" for r in db.list_counselors(True))
@@ -970,8 +976,8 @@ def student_reports(req: Request, student_id: int):
       <button>ثبت یادداشت</button>
     </form>
     <h3>یادداشت‌های اخیر</h3><ul>{note_rows or '<li>یادداشتی ثبت نشده است.</li>'}</ul>
-    <table><tr><th>تاریخ</th><th>مطالعه</th><th>اجرای برنامه</th><th>تست/تمرین</th><th>مشکل اصلی</th><th>وضعیت</th><th>تحلیل</th></tr>
-    {trs if trs else '<tr><td colspan="7">گزارشی ثبت نشده است.</td></tr>'}</table>
+    <table><tr><th>تاریخ</th><th>مطالعه</th><th>اجرای برنامه</th><th>تست/تمرین</th><th>مشکل اصلی</th><th>حال روحی</th><th>استرس</th><th>انگیزه</th><th>وضعیت</th><th>تحلیل</th></tr>
+    {trs if trs else '<tr><td colspan="10">گزارشی ثبت نشده است.</td></tr>'}</table>
     """
     return page("گزارش‌های دانش‌آموز", body)
 
