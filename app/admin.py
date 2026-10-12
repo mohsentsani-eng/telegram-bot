@@ -51,13 +51,37 @@ def public_home():
 <section class="panel"><h2>تماس با مرکز</h2><p>سبزوار، کاشفی شمالی، کاشفی ۱۴، پلاک ۱۷</p><p>تلفن: <a href="tel:05144244845">۰۵۱-۴۴۲۴۴۸۴۵</a></p></section>
 <footer>مرکز خدمات روانشناسی و مشاوره ترنم همدلی — سبزوار</footer></main></body></html>""", media_type="text/html; charset=utf-8")
 
+@app.get("/panel-moshaveran", response_class=HTMLResponse)
+def public_counselor_landing():
+    return HTMLResponse("""<!doctype html>
+<html lang="fa" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>پنل مشاوران ترنم همدلی | ورود مشاور تحصیلی</title>
+<meta name="description" content="صفحه رسمی پنل مشاوران مرکز ترنم همدلی؛ دسترسی مشاوران به پرونده‌های تخصیص‌یافته دانش‌آموزان، گزارش‌های روزانه، یادداشت جلسات و پیگیری تحصیلی.">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://telegram-bot-production-5605.up.railway.app/panel-moshaveran">
+<style>body{font-family:Tahoma,Arial,sans-serif;margin:0;background:#f5f7fb;color:#172033;line-height:2}main{max-width:850px;margin:36px auto;padding:20px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;margin:16px 0}h1,h2{color:#174ea6}a.button{display:inline-block;background:#174ea6;color:#fff;text-decoration:none;padding:10px 18px;border-radius:10px;margin:8px 0}footer{color:#64748b;font-size:13px}</style>
+</head><body><main><section class="card">
+<h1>پنل مشاوران ترنم همدلی</h1>
+<p>صفحه رسمی ورود مشاوران مرکز خدمات روانشناسی و مشاوره ترنم همدلی. این پنل برای پیگیری تحصیلی، مشاهده گزارش‌های روزانه و ثبت یادداشت و برنامه پیگیری دانش‌آموزانی است که به مشاور تخصیص داده شده‌اند.</p>
+<a class="button" href="/counselor/login">ورود امن به پنل مشاوران</a>
+</section><section class="card"><h2>امکانات پنل</h2><ul>
+<li>مشاهده پرونده دانش‌آموزان تخصیص‌یافته به مشاور</li>
+<li>بررسی گزارش‌های روزانه مطالعه و روند اجرای برنامه</li>
+<li>ثبت یادداشت جلسات مشاوره و پیگیری‌های بعدی</li>
+<li>دریافت اعلان تلگرام برای گزارش‌های جدید، در صورت تنظیم حساب</li>
+</ul><p>دسترسی به پرونده‌ها نیازمند حساب کاربری اختصاصی است. اطلاعات پرونده دانش‌آموزان عمومی نیست و فقط پس از ورود معتبر نمایش داده می‌شود.</p></section>
+<section class="card"><h2>مرکز خدمات روانشناسی و مشاوره ترنم همدلی</h2><p>سبزوار، کاشفی شمالی، کاشفی ۱۴، پلاک ۱۷</p><p>تلفن: <a href="tel:05144244845">۰۵۱-۴۴۲۴۴۸۴۵</a></p><a href="/">وب‌سایت ترنم همدلی</a></section>
+<footer>ترنم همدلی — پنل مشاوران</footer></main></body></html>""", media_type="text/html; charset=utf-8")
+
+
 @app.get("/robots.txt", response_class=HTMLResponse)
 def robots_txt():
-    return HTMLResponse("User-agent: *\\nAllow: /\\nDisallow: /admin\\nSitemap: https://telegram-bot-production-5605.up.railway.app/sitemap.xml\\n", media_type="text/plain; charset=utf-8")
+    return HTMLResponse("User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /counselor/\nSitemap: https://telegram-bot-production-5605.up.railway.app/sitemap.xml\n", media_type="text/plain; charset=utf-8")
 
 @app.get("/sitemap.xml", response_class=HTMLResponse)
 def sitemap_xml():
-    return HTMLResponse('<?xml version="1.0" encoding="UTF-8"?>' '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://telegram-bot-production-5605.up.railway.app/</loc></url></urlset>', media_type="application/xml; charset=utf-8")
+    return HTMLResponse('<?xml version="1.0" encoding="UTF-8"?>' '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://telegram-bot-production-5605.up.railway.app/</loc></url><url><loc>https://telegram-bot-production-5605.up.railway.app/panel-moshaveran</loc></url></urlset>', media_type="application/xml; charset=utf-8")
 
 def page(title: str, body: str) -> HTMLResponse:
     nav = """
