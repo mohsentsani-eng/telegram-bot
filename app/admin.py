@@ -284,18 +284,23 @@ def students(req: Request):
 
     rows = db.list_students()
     trs = "".join(
-        f"<tr><td><a href='/admin/student/{r['id']}'>{r['id']}</a></td>"
+        f"<tr><td>{r['id']}</td>"
         f"<td>{esc(r['first_name'])} {esc(r['last_name'])}</td>"
         f"<td>{esc(r['grade'])}</td><td>{esc(r['track'])}</td>"
         f"<td>{esc(r['city'])}</td><td>{esc(r['phone'])}</td>"
-        f"<td>{esc(r['referral_source'])}</td></tr>"
+        f"<td>{esc(r['referral_source'])}</td>"
+        f"<td><div class='actions' style='margin:0'>"
+        f"<a class='btn' href='/admin/student/{r['id']}'>مشاهده پرونده</a>"
+        f"<a class='btn primary' href='/admin/student/{r['id']}/reports'>گزارش‌ها و تخصیص مشاور</a>"
+        f"</div></td></tr>"
         for r in rows
     )
 
     body = (
         "<h1>پرونده دانش‌آموزان</h1>"
+        "<p class='muted'>برای تخصیص دانش‌آموز به مشاور، از گزینه «گزارش‌ها و تخصیص مشاور» در ردیف همان دانش‌آموز استفاده کنید.</p>"
         "<table><tr><th>ID</th><th>نام</th><th>پایه</th><th>رشته</th>"
-        "<th>شهر</th><th>تلفن</th><th>منبع جذب</th></tr>"
+        "<th>شهر</th><th>تلفن</th><th>منبع جذب</th><th>عملیات</th></tr>"
         + trs
         + "</table>"
     )
@@ -347,6 +352,10 @@ def student(req: Request, sid: int):
     psych_access_id = int(access["id"]) if access and access["status"] == "active" else 0
     body = f"""
     <h1>{esc(s['first_name'])} {esc(s['last_name'])}</h1>
+    <div class="actions">
+      <a class="btn primary" href="/admin/student/{sid}/reports">گزارش‌ها و تخصیص مشاور</a>
+      <a class="btn" href="/admin/students">بازگشت به فهرست دانش‌آموزان</a>
+    </div>
     <p>پایه: {esc(s['grade'])} | رشته: {esc(s['track'])} |
        شهر: {esc(s['city'])} | تلفن: {esc(s['phone'])}</p>
     <p>منبع جذب: {esc(s['referral_source'])} | امتیاز: {s['points']}</p>
