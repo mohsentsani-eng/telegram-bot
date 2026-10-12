@@ -1033,7 +1033,7 @@ def counselors(req: Request):
     c.close()
     trs="".join(
         f"<tr><td>{r['id']}</td><td>{esc(r['name'])}</td><td>{esc(r['telegram_id'])}</td>"
-        f"<td>{'فعال' if r['active'] else 'غیرفعال'}</td><td>{esc(accounts.get(r['id'],{}).get('username','تنظیم نشده'))}</td>"
+        f"<td>{'فعال' if r['active'] else 'غیرفعال'}</td><td>{esc(accounts[r['id']]['username'] if r['id'] in accounts else 'تنظیم نشده')}</td>"
         f"<td><form method='post' action='/admin/counselors/account'>"
         f"<input type='hidden' name='counselor_id' value='{r['id']}'>"
         f"<input name='username' placeholder='نام کاربری جدید' required>"
