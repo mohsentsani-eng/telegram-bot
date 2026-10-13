@@ -821,7 +821,7 @@ def weekly_progress(student_id, days=7):
     c=conn()
     rows=c.execute("""SELECT * FROM student_progress WHERE student_id=?
                       AND report_date >= date('now', ?)
-                      ORDER BY report_date""",(f"-{max(1,int(days))-1} days",)).fetchall()
+                      ORDER BY report_date""",(student_id, f"-{max(1,int(days))-1} days")).fetchall()
     c.close()
     return rows
 
