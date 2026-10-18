@@ -45,6 +45,15 @@ try:
 except Exception:
     QUESTION_BANK_CATALOG={}
 
+def normalize_subject_name(value):
+    """Normalize Persian/Arabic letter variants and invisible spacing for subject matching."""
+    value=str(value or "").strip()
+    value=value.replace("ي","ی").replace("ى","ی").replace("ك","ک")
+    for ch in ("\u200c","\u200f","\u200e","\ufeff"):
+        value=value.replace(ch,"")
+    value=" ".join(value.split())
+    return value
+
 def grade_subjects(grade, track=""):
     entry=QUESTION_BANK_CATALOG.get(grade, {})
     if isinstance(entry,list):
@@ -2004,11 +2013,21 @@ async def planner_6(message:Message,state:FSMContext):
 async def planner_7(message:Message,state:FSMContext):
     data=await state.get_data()
     allowed=data.get("allowed_subjects") or []
-    raw=(message.text or "").replace("،",",")
-    priorities=[x.strip() for x in raw.split(",") if x.strip()]
-    invalid=[x for x in priorities if x not in allowed]
+    raw=(message.text or "").replace("،",",").replace("؛",",").replace(";",",")
+    requested=[x.strip() for x in raw.split(",") if x.strip()]
+    # Match normalized forms but persist canonical catalog names for consistent reports.
+    canonical={normalize_subject_name(subject):subject for subject in allowed}
+    priorities=[]
+    invalid=[]
+    for subject in requested:
+        match=canonical.get(normalize_subject_name(subject))
+        if match:
+            if match not in priorities:
+                priorities.append(match)
+        else:
+            invalid.append(subject)
     if invalid:
-        return await message.answer("⚠️ این درس‌ها با پایه/رشته ثبت‌شده شما تطابق ندارند: "+"، ".join(invalid)+"\n\nلطفاً فقط از این فهرست انتخاب کن:\n"+"، ".join(allowed))
+        return await message.answer("⚠️ این موارد در فهرست درس‌های مجاز پیدا نشد: "+"، ".join(invalid)+"\n\nلطفاً از فهرست زیر انتخاب کن. حروف عربی/فارسی و فاصله‌های اضافی هم اصلاح می‌شوند:\n"+"، ".join(allowed))
 
     if not priorities:
         return await message.answer("لطفاً حداقل یک درس را از فهرست بالا انتخاب کن.")
