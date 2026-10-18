@@ -1924,7 +1924,11 @@ def build_initial_plan(data, student):
     total_cap=max(0.5,min(12,daily))
     morning_cap=max(0,min(8,morning)); afternoon_cap=max(0,min(10,afternoon))
     commitments=parse_time_ranges((data.get("school","")+"\n"+data.get("classes","")))
-    priorities=[x.strip() for x in (data.get("priorities","") or "").replace("،",",").split(",") if x.strip()]
+    raw_priorities=data.get("priorities","") or ""
+    if isinstance(raw_priorities, (list, tuple)):
+        priorities=[str(x).strip() for x in raw_priorities if str(x).strip()]
+    else:
+        priorities=[x.strip() for x in str(raw_priorities).replace("،",",").replace("؛",",").replace(";",",").split(",") if x.strip()]
     if not priorities: priorities=["درس اصلی ۱","درس اصلی ۲","مرور و تست"]
     # Use 60-90 minute blocks; rotate priorities to avoid a monotonous plan.
     blocks=[]
@@ -2013,8 +2017,9 @@ async def planner_6(message:Message,state:FSMContext):
 async def planner_7(message:Message,state:FSMContext):
     data=await state.get_data()
     allowed=data.get("allowed_subjects") or []
-    raw=(message.text or "").replace("،",",").replace("؛",",").replace(";",",")
-    requested=[x.strip() for x in raw.split(",") if x.strip()]
+    import re
+    raw=(message.text or "").strip()
+    requested=[x.strip() for x in re.split(r"[,،؛;|/\\n\\r]+", raw) if x.strip()]
     # Match normalized forms but persist canonical catalog names for consistent reports.
     canonical={normalize_subject_name(subject):subject for subject in allowed}
     priorities=[]
@@ -2026,6 +2031,31 @@ async def planner_7(message:Message,state:FSMContext):
                 priorities.append(match)
         else:
             invalid.append(subject)
+
+    # If a mobile keyboard/paste omits the separator (e.g. "شیمی عربی"),
+    # split only when the complete compact input can be matched unambiguously
+    # against known canonical subject names. Never guess partial matches.
+    if invalid and len(requested)==1:
+        compact_raw=re.sub(r"\\s+", "", normalize_subject_name(raw))
+        candidates=sorted(allowed, key=lambda x: len(re.sub(r"\\s+", "", normalize_subject_name(x))), reverse=True)
+        parsed=[]
+        pos=0
+        while pos < len(compact_raw):
+            found=None
+            for candidate in candidates:
+                token=re.sub(r"\\s+", "", normalize_subject_name(candidate))
+                if token and compact_raw.startswith(token, pos):
+                    found=candidate
+                    break
+            if not found:
+                parsed=[]
+                break
+            if found not in parsed:
+                parsed.append(found)
+            pos += len(re.sub(r"\\s+", "", normalize_subject_name(found)))
+        if parsed and pos == len(compact_raw):
+            priorities=parsed
+            invalid=[]
     if invalid:
         return await message.answer("⚠️ این موارد در فهرست درس‌های مجاز پیدا نشد: "+"، ".join(invalid)+"\n\nلطفاً از فهرست زیر انتخاب کن. حروف عربی/فارسی و فاصله‌های اضافی هم اصلاح می‌شوند:\n"+"، ".join(allowed))
 
