@@ -38,7 +38,7 @@ DIFFS=["آسان","متوسط","سخت","تشخیصی"]
 
 # Curriculum-aware subject map. The bank and menu use the same canonical names,
 # so a subject can never disappear just because an old CSV used a different label.
-QUESTION_BANK_CATALOG_PATH=os.path.join(os.path.dirname(__file__),"..","data","question_bank_catalog.json")
+QUESTION_BANK_CATALOG_PATH=os.path.join(os.path.dirname(__file__),"data","question_bank_catalog.json")
 try:
     with open(QUESTION_BANK_CATALOG_PATH,encoding="utf-8") as _f:
         QUESTION_BANK_CATALOG=json.load(_f)
@@ -1200,7 +1200,7 @@ async def psych_start(message,state):
     if not s:
         return await begin_registration(message,state)
 
-    cfg=json.load(open(os.path.join(os.path.dirname(__file__),"..","data","psychology.json"),encoding="utf-8"))
+    cfg=json.load(open(os.path.join(os.path.dirname(__file__),"data","psychology.json"),encoding="utf-8"))
     access=db.has_active_access(s["id"])
     if not access:
         return
@@ -1388,7 +1388,7 @@ async def _psych_after_module(message,state,d):
 async def learning_start(message,state):
     if not await require_service_access(message,"ارزیابی مهارت‌های یادگیری"): return
     if not await require_channel(message): return
-    cfg=json.load(open(os.path.join(os.path.dirname(__file__),"..","data","learning_skills.json"),encoding="utf-8"))
+    cfg=json.load(open(os.path.join(os.path.dirname(__file__),"data","learning_skills.json"),encoding="utf-8"))
     await state.clear(); await state.update_data(cfg=cfg); await state.set_state(Learning.choose)
     await message.answer("کدام مهارت را می‌خواهید ارزیابی کنید؟",reply_markup=nav([x["title"] for x in cfg["skills"]]))
 
@@ -1989,7 +1989,14 @@ async def planner_5(message:Message,state:FSMContext):
 async def planner_6(message:Message,state:FSMContext):
     await state.update_data(exams=message.text.strip()); await state.set_state(Planner.priorities)
     student=db.get_student_by_tg(message.from_user.id)
-    subjects=grade_subjects(student["grade"], student["track"]) if student else HIGH_GENERAL_SUBJECTS
+    subjects=grade_subjects(student["grade"], student["track"]) if student else []
+    if not subjects:
+        # Fail clearly instead of trapping the student at question 7 with an empty allowed list.
+        await state.clear()
+        return await message.answer(
+            "⚠️ فهرست درس‌های متناسب با پایه/رشته در حال حاضر در دسترس نیست. پاسخ‌های قبلی این مرحله حفظ نمی‌شوند، چون هنوز برنامه‌ای ثبت نشده است. لطفاً از منوی اصلی دوباره اقدام کنید یا با مرکز تماس بگیرید.",
+            reply_markup=main_menu()
+        )
     await state.update_data(allowed_subjects=subjects)
     await message.answer("<b>سؤال ۷ از ۷:</b> اولویت‌های مطالعه این هفته را فقط از درس‌های متناسب با پایه‌ات انتخاب کن.\n\n"+"، ".join(subjects)+"\n\nمثال: "+"، ".join(subjects[:3]))
 
