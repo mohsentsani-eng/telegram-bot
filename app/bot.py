@@ -2019,7 +2019,7 @@ async def planner_7(message:Message,state:FSMContext):
     allowed=data.get("allowed_subjects") or []
     import re
     raw=(message.text or "").strip()
-    requested=[x.strip() for x in re.split(r"[,،؛;|/\\n\\r]+", raw) if x.strip()]
+    requested=[x.strip() for x in re.split(r"[,،؛;|/\n\r]+", raw) if x.strip()]
     # Match normalized forms but persist canonical catalog names for consistent reports.
     canonical={normalize_subject_name(subject):subject for subject in allowed}
     priorities=[]
@@ -2036,14 +2036,14 @@ async def planner_7(message:Message,state:FSMContext):
     # split only when the complete compact input can be matched unambiguously
     # against known canonical subject names. Never guess partial matches.
     if invalid and len(requested)==1:
-        compact_raw=re.sub(r"\\s+", "", normalize_subject_name(raw))
-        candidates=sorted(allowed, key=lambda x: len(re.sub(r"\\s+", "", normalize_subject_name(x))), reverse=True)
+        compact_raw=re.sub(r"\s+", "", normalize_subject_name(raw))
+        candidates=sorted(allowed, key=lambda x: len(re.sub(r"\s+", "", normalize_subject_name(x))), reverse=True)
         parsed=[]
         pos=0
         while pos < len(compact_raw):
             found=None
             for candidate in candidates:
-                token=re.sub(r"\\s+", "", normalize_subject_name(candidate))
+                token=re.sub(r"\s+", "", normalize_subject_name(candidate))
                 if token and compact_raw.startswith(token, pos):
                     found=candidate
                     break
@@ -2052,7 +2052,7 @@ async def planner_7(message:Message,state:FSMContext):
                 break
             if found not in parsed:
                 parsed.append(found)
-            pos += len(re.sub(r"\\s+", "", normalize_subject_name(found)))
+            pos += len(re.sub(r"\s+", "", normalize_subject_name(found)))
         if parsed and pos == len(compact_raw):
             priorities=parsed
             invalid=[]
