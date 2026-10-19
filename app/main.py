@@ -8,6 +8,7 @@ load_dotenv()
 
 from .db import init_db
 from .migrations import backup_before_migration, migrate
+from .seed_question_bank import seed_grade11_math_questions
 from .admin import app
 from .bot import run_bot
 
@@ -36,6 +37,8 @@ async def main():
     backup_before_migration()
     init_db()
     migrate()
+    # Additive seed only: preserves all existing students and question records.
+    seed_grade11_math_questions()
     host = os.getenv("ADMIN_HOST", "0.0.0.0").strip() or "0.0.0.0"
     try:
         preferred_port = int(os.getenv("PORT", os.getenv("ADMIN_PORT", "8000")))
