@@ -892,7 +892,7 @@ def question_report(req: Request):
     c=db.conn()
     rows=c.execute("SELECT grade,COALESCE(track,'') track,subject,COALESCE(chapter,'') chapter,COALESCE(topic,'') topic,COALESCE(difficulty,'') difficulty,COUNT(*) n FROM questions WHERE active=1 GROUP BY grade,track,subject,chapter,topic,difficulty ORDER BY grade,track,subject,chapter,topic,difficulty").fetchall()
     c.close()
-    audit=db.question_coverage_audit(10)
+    audit=db.question_coverage_audit(1000)
     topic_audit=db.question_topic_coverage_audit(10)
     quality=db.question_quality_distribution()
     quality_audit=db.question_quality_audit()
@@ -900,8 +900,25 @@ def question_report(req: Request):
     qrows="".join(f"<tr><td>{k}</td><td>{quality['correct'].get(k,0)}</td><td>{quality['correct_pct'].get(k,0)}٪</td></tr>" for k in ("A","B","C","D"))
     drows="".join(f"<tr><td>{esc(k)}</td><td>{v}</td><td>{round(v/max(quality['total'],1)*100,1)}٪</td></tr>" for k,v in quality["difficulty"].items())
     gaps="".join(f"<tr><td>{esc(g['grade'])}</td><td>{esc(g['track'])}</td><td>{esc(g['subject'])}</td><td>{g['count']}</td><td>{g['needed']}</td></tr>" for g in audit["gaps"])
-    summary=f"<p><b>پوشش حداقل ۱۰ سؤال برای هر درس:</b> {audit['covered']} از {audit['expected']} ({audit['coverage_pct']}٪)</p>"
-    gap_table="<h2>موارد نیازمند تکمیل در سطح درس</h2><table><tr><th>پایه</th><th>رشته</th><th>درس</th><th>موجود</th><th>نیاز</th></tr>"+gaps+"</table>"
+    summary=f"<p><b>هدف: حداقل ۱۰۰۰ سؤال فعال برای هر درس در هر پایه/رشته:</b> {audit['covered']} از {audit['expected']} ({audit['coverage_pct']}٪) به حد نصاب رسیده‌اند.</p>"
+    coverage_rows="".join(f"<tr><td>{esc(g['grade'])}</td><td>{esc(g['track'])}</td><td>{esc(g['subject'])}</td><td>{g['count']}</td><td>{g['needed']}</td><td>کمبود</td></tr>" for g in audit["gaps"])
+    c2=db.conn()
+    all_counts=c2.execute("SELECT grade,COALESCE(track,'') track,subject,COUNT(*) n FROM questions WHERE active=1 GROUP BY grade,COALESCE(track,''),subject ORDER BY grade,track,subject").fetchall()
+    c2.close()
+    count_map={(str(r["grade"]),str(r["track"]),str(r["subject"])):int(r["n"]) for r in all_counts}
+    import json
+    catalog_path=db.PROJECT_ROOT / "data" / "question_bank_catalog.json"
+    with catalog_path.open(encoding="utf-8") as fh:
+        report_catalog=json.load(fh)
+    all_rows=[]
+    for grade, tracks in report_catalog.items():
+        track_items=[("",tracks)] if isinstance(tracks,list) else list(tracks.items())
+        for track, subjects in track_items:
+            for subject in subjects:
+                n=count_map.get((str(grade),str(track),str(subject)),0)
+                status="کامل" if n>=1000 else "کمبود"
+                all_rows.append(f"<tr><td>{esc(grade)}</td><td>{esc(track)}</td><td>{esc(subject)}</td><td>{n}</td><td>{max(0,1000-n)}</td><td>{status}</td></tr>")
+    gap_table="<h2>آمار همه درس‌ها و رشته‌ها (هدف ۱۰۰۰ سؤال فعال برای هر درس)</h2><table><tr><th>پایه</th><th>رشته</th><th>درس</th><th>موجود</th><th>کمبود تا ۱۰۰۰</th><th>وضعیت</th></tr>"+"".join(all_rows)+"</table>"
     topic_gaps="".join(f"<tr><td>{esc(g['grade'])}</td><td>{esc(g['track'])}</td><td>{esc(g['subject'])}</td><td>{esc(g['chapter'])}</td><td>{esc(g['topic'])}</td><td>{g['count']}</td><td>{g['needed']}</td></tr>" for g in topic_audit["gaps"][:300])
     topic_table="<h2>مباحث کمتر از ۱۰ سؤال فعال</h2><p class='muted'>این گزارش فقط وضعیت بانک را می‌سنجد و هیچ رکوردی را حذف یا غیرفعال نمی‌کند.</p><table><tr><th>پایه</th><th>رشته</th><th>درس</th><th>فصل</th><th>مبحث</th><th>موجود</th><th>نیاز</th></tr>"+(topic_gaps if topic_gaps else "<tr><td colspan='7'>مبحثی با کمتر از ۱۰ سؤال فعال پیدا نشد.</td></tr>")+"</table>"
     quality_html="<h2>کنترل کیفیت بانک</h2><div class='grid'><div class='card'>کل سؤالات فعال<div class='n'>"+str(quality["total"])+"</div></div><div class='card'>سؤالات نیازمند بررسی<div class='n'>"+str(quality_audit["bad_total"])+"</div><div class='muted'>کیفیت فعلی: "+str(quality_audit["quality_pct"])+"٪</div></div></div><div class='grid'><div class='card'><h3>توزیع پاسخ صحیح</h3><table><tr><th>گزینه</th><th>تعداد</th><th>درصد</th></tr>"+qrows+"</table></div><div class='card'><h3>توزیع سطح دشواری</h3><table><tr><th>سطح</th><th>تعداد</th><th>درصد</th></tr>"+drows+"</table></div></div>"
