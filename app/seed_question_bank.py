@@ -47,7 +47,7 @@ def seed_grade11_math_questions():
             "track": "ریاضی",
             "subject": subject,
             "book": f"{subject} یازدهم",
-            "chapter": chapter,
+            "chapter": "تمرین‌های پایه",
             "topic": "تمرین مفهومی",
             "subtopic": "",
             "difficulty": "متوسط",
