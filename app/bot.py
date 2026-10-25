@@ -757,7 +757,7 @@ async def r6(message:Message,state:FSMContext):
             db.upsert_lead_from_student(s_new["id"], source)
             trial_note="درخواست دسترسی اولیه ۳۰ روزه پس از ثبت‌نام"
             db.create_access_request(s_new["id"],"trial",trial_note)
-            await notify_center_request(message, s_new, "درخواست دسترسی اولیه ۳۰ روزه", trial_note)
+            await notify_center_request(s_new, "درخواست دسترسی اولیه ۳۰ روزه", trial_note)
         text=("✅ پرونده شما با موفقیت ثبت شد.\n\n"
       "🔐 درخواست دسترسی اولیه ۳۰ روزه در پنل مرکز ثبت می‌شود و پس از تأیید مرکز فعال خواهد شد.\n"
       "🎯 ارزیابی سریع همچنان برای شما در دسترس است.")
@@ -841,7 +841,7 @@ async def access_plan_callback(cq:CallbackQuery):
     plan=next(p for p in access_plans() if p["days"]==days)
     request_note=f"درخواست پلن {days} روزه" + (f"؛ مبلغ اعلامی {plan['price']} تومان" if plan["price"] is not None else "")
     db.create_access_request(s["id"], f"access_{days}", request_note)
-    await notify_center_request(cq.message, s, f"درخواست فعال‌سازی پلن {plan['title']}", request_note)
+    await notify_center_request(s, f"درخواست فعال‌سازی پلن {plan['title']}", request_note)
     price_text=f"مبلغ: <b>{plan['price']:,} تومان</b>" if plan["price"] is not None else "مبلغ: پس از بررسی مرکز اعلام می‌شود."
     await cq.message.answer(
         f"✅ <b>درخواست پلن {plan['title']} ثبت شد.</b>\n\n"
@@ -1263,7 +1263,7 @@ async def psych_start(message,state):
     )
 
 
-async def notify_center_request(message: Message, student, request_type: str, note: str = ""):
+async def notify_center_request(student, request_type: str, note: str = ""):
     """Notify the center through configured staff Telegram IDs; never block request creation."""
     recipients = set()
     admin_id = (os.getenv("ADMIN_TELEGRAM_ID", "") or "").strip()
@@ -1324,8 +1324,8 @@ async def psych_counselor_callback(cq:CallbackQuery):
         return await cq.message.answer("ابتدا ثبت‌نام را کامل کنید.",reply_markup=main_menu())
     note="درخواست بررسی نتیجه غربالگری روان‌شناختی توسط مشاور"
     db.request_counseling(s["id"],"psych_assessment_review",note)
-    await notify_center_request(cq.message, s, "بررسی نتیجه ارزیابی روان‌شناختی", note)
-    await cq.message.answer("✅ درخواست بررسی تخصصی ثبت شد. نتیجه در پرونده شما ثبت است و درخواست برای پیگیری مرکز ارسال شد.",reply_markup=main_menu())
+    await notify_center_request(s, "بررسی نتیجه ارزیابی روان‌شناختی", note)
+    await cq.message.answer("✅ درخواست بررسی تخصصی ثبت شد. نتیجه در پرونده شما ثبت است و درخواست در CRM ثبت شد تا مرکز آن را بررسی کند.",reply_markup=main_menu())
 
 @dp.message(Psych.answering)
 async def psych_ans(message:Message,state:FSMContext):
@@ -2154,8 +2154,8 @@ async def planner_counselor(cq:CallbackQuery):
     if not s: return await cq.message.answer("ابتدا ثبت‌نام را کامل کن.",reply_markup=main_menu())
     note="درخواست اصلاح و شخصی‌سازی برنامه مطالعه توسط مشاور مرکز ترنم همدلی"
     db.request_counseling(s["id"],"plan_review",note)
-    await notify_center_request(cq.message, s, "بازبینی برنامه مطالعه", note)
-    await cq.message.answer("✅ درخواست شما ثبت شد و برای پیگیری به مرکز ارسال شد.\n\nمشاور می‌تواند برنامه را بر اساس شرایط واقعی، آزمون‌ها و روند مطالعه‌ات بازبینی کند.",reply_markup=main_menu())
+    await notify_center_request(s, "بازبینی برنامه مطالعه", note)
+    await cq.message.answer("✅ درخواست شما ثبت شد و در CRM ثبت شد تا مرکز آن را بررسی کند.\n\nمشاور می‌تواند برنامه را بر اساس شرایط واقعی، آزمون‌ها و روند مطالعه‌ات بازبینی کند.",reply_markup=main_menu())
 
 class QuickAssessment(StatesGroup):
     answering=State()
@@ -2445,21 +2445,21 @@ async def menu(message:Message,state:FSMContext):
     if t=="🚀 کوچینگ تحصیلی":
         note="علاقه‌مند به کوچینگ"
         db.request_counseling(s["id"],"coaching",note)
-        await notify_center_request(message, s, "کوچینگ تحصیلی", note)
-        return await message.answer("✅ درخواست کوچینگ ثبت شد و برای پیگیری به مرکز ارسال شد.",reply_markup=main_menu())
+        await notify_center_request(s, "کوچینگ تحصیلی", note)
+        return await message.answer("✅ درخواست کوچینگ ثبت شد و در CRM ثبت شد تا مرکز آن را بررسی کند.",reply_markup=main_menu())
     if t=="👨‍👩‍👧 مشاوره والدین":
         note="درخواست مشاوره والدین"
         db.request_counseling(s["id"],"parents",note)
-        await notify_center_request(message, s, "مشاوره والدین", note)
-        return await message.answer("✅ درخواست مشاوره والدین ثبت شد و برای پیگیری به مرکز ارسال شد.",reply_markup=main_menu())
+        await notify_center_request(s, "مشاوره والدین", note)
+        return await message.answer("✅ درخواست مشاوره والدین ثبت شد و در CRM ثبت شد تا مرکز آن را بررسی کند.",reply_markup=main_menu())
     if t=="📞 درخواست مشاوره":
         note="درخواست عمومی"
         db.request_counseling(s["id"],"general",note)
         lead_id=db.upsert_lead_from_student(s["id"])
         if lead_id: db.set_lead_status(lead_id,"interested")
         db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"general"})
-        await notify_center_request(message, s, "درخواست مشاوره عمومی", note)
-        return await message.answer("✅ درخواست شما ثبت شد و برای پیگیری به مرکز ارسال شد.",reply_markup=main_menu())
+        await notify_center_request(s, "درخواست مشاوره عمومی", note)
+        return await message.answer("✅ درخواست شما ثبت شد و در CRM ثبت شد تا مرکز آن را بررسی کند.",reply_markup=main_menu())
 
 async def run_bot():
     # Polling is deliberately self-healing: temporary Telegram/network errors
