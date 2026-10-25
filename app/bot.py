@@ -756,7 +756,6 @@ def _set_human_chat_status(student_id:int,status:str):
 def _staff_chat_markup(student_id:int,status:str="open"):
     if status=="open":
         return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💬 ادامه گفتگو / ارسال پیام",callback_data=f"staff_chat_open:{student_id}")],
             [InlineKeyboardButton(text="🔒 بستن گفتگو",callback_data=f"staff_chat_close:{student_id}")]
         ])
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -891,6 +890,10 @@ async def open_staff_live_chat(cq:CallbackQuery,state:FSMContext):
         "برای پایان، از دکمه «🔒 بستن گفتگو» استفاده کنید.",
         reply_markup=_staff_chat_markup(student_id,"open")
     )
+    try:
+        await bot.send_message(student_id, "💬 <b>گفتگوی ترنم همدلی باز شد</b>\n\nگفتگوی شما با مرکز باز شده است. می‌توانید پیام‌هایتان را همین‌جا در بات ارسال کنید.")
+    except Exception as exc:
+        print(f"[HUMAN_CONTACT] open notification failed: {type(exc).__name__}: {exc}",flush=True)
 
 @dp.callback_query(F.data.startswith("staff_chat_close:"))
 async def close_staff_live_chat(cq:CallbackQuery,state:FSMContext):
@@ -911,6 +914,13 @@ async def close_staff_live_chat(cq:CallbackQuery,state:FSMContext):
     except Exception:
         pass
     await cq.message.answer(f"🔒 گفتگوی دانش‌آموز <code>{student_id}</code> بسته شد. برای ادامه، دوباره «💬 باز کردن گفتگو» را بزنید.")
+    try:
+        student=db.get_student_by_tg(student_id)
+        name=html.escape(str(_student_field(student,"first_name","") or "دانش‌آموز"))
+        await bot.send_message(student_id, f"🔒 <b>گفتگوی ترنم همدلی بسته شد</b>\n\n{name} عزیز، گفتگو توسط مرکز بسته شد. اگر دوباره به کمک نیاز داشتید، از گزینه «💬 ارتباط با مشاور» پیام جدیدی ارسال کنید.")
+    except Exception as exc:
+        print(f"[HUMAN_CONTACT] close notification failed: {type(exc).__name__}: {exc}",flush=True)
+
 
 @dp.message(StaffLiveChat.messaging,F.text)
 async def send_live_chat_message(message:Message,state:FSMContext):
