@@ -934,7 +934,7 @@ def requests(req: Request):
     c = db.conn()
     rows = c.execute(
         """
-        SELECT cr.*,s.first_name,s.last_name
+        SELECT cr.*,s.first_name,s.last_name,s.phone,s.username,s.telegram_id,s.grade,s.city
         FROM counseling_requests cr
         JOIN students s ON s.id=cr.student_id
         ORDER BY cr.id DESC LIMIT 500
@@ -942,23 +942,58 @@ def requests(req: Request):
     ).fetchall()
     c.close()
 
-    trs = "".join(
-        f"<tr><td>{r['id']}</td>"
-        f"<td>{esc(r['first_name'])} {esc(r['last_name'])}</td>"
-        f"<td>{esc(r['request_type'])}</td>"
-        f"<td>{esc(r['status'])}</td>"
-        f"<td>{esc(r['created_at'])}</td></tr>"
-        for r in rows
-    )
+    statuses = [
+        ("new", "جدید"), ("contacted", "تماس گرفته شد"),
+        ("no_answer", "پاسخ نداد"), ("followup", "نیازمند پیگیری"),
+        ("registered", "ثبت‌نام شد"), ("closed", "بسته شد")
+    ]
+    trs = []
+    for r in rows:
+        uname=(r["username"] or "").strip().lstrip("@")
+        profile=("https://t.me/"+uname) if uname else ("tg://user?id="+str(r["telegram_id"]))
+        status_options="".join(
+            f'<option value="{value}" {"selected" if r["status"]==value else ""}>{label}</option>'
+            for value,label in statuses
+        )
+        history=db.counseling_request_history(int(r["id"]))
+        history_html="<br>".join(
+            f'{esc(h["created_at"])} — {esc(h["old_status"] or "ثبت اولیه")} → {esc(h["new_status"])}: {esc(h["note"])}'
+            for h in history[:5]
+        ) or "بدون سابقه"
+        trs.append(
+            f'<tr><td>#{r["id"]}</td>'
+            f'<td>{esc(r["first_name"])} {esc(r["last_name"])}<br><small>پایه: {esc(r["grade"])} | شهر: {esc(r["city"])}</small></td>'
+            f'<td>{esc(r["request_type"])}<br><small>{esc(r["note"])}</small></td>'
+            f'<td>{esc(r["phone"] or "ثبت نشده")}<br><small>Telegram ID: {esc(r["telegram_id"])}</small><br><a href="{esc(profile)}" target="_blank" rel="noopener">پروفایل تلگرام</a></td>'
+            f'<td>{esc(r["status"])}</td><td>{esc(r["created_at"])}</td>'
+            f'<td><form method="post" action="/admin/requests/status">'
+            f'<input type="hidden" name="request_id" value="{r["id"]}">'
+            f'<select name="status">{status_options}</select>'
+            f'<input name="note" placeholder="یادداشت تماس/پیگیری" maxlength="500">'
+            f'<button type="submit">ذخیره</button></form><small>{history_html}</small></td></tr>'
+        )
 
     body = (
-        "<h1>درخواست‌های مشاوره</h1>"
-        "<table><tr><th>ID</th><th>دانش‌آموز</th><th>نوع</th>"
-        "<th>وضعیت</th><th>تاریخ</th></tr>"
-        + trs
+        "<h1>درخواست‌های مشاوره و پیگیری تماس</h1>"
+        "<p>تغییر وضعیت و یادداشت‌ها در سابقه درخواست ثبت می‌شوند. درخواست‌های تکراری یک دانش‌آموز از یک نوع، تا ۱۵ دقیقه رکورد جدید ایجاد نمی‌کنند.</p>"
+        "<table><tr><th>شناسه</th><th>دانش‌آموز</th><th>نوع/یادداشت</th>"
+        "<th>راه تماس</th><th>وضعیت</th><th>تاریخ ثبت</th><th>ثبت پیگیری و سابقه</th></tr>"
+        + ("".join(trs) if trs else '<tr><td colspan="7">درخواستی ثبت نشده است.</td></tr>')
         + "</table>"
     )
     return page("درخواست‌ها", body)
+
+
+@app.post("/admin/requests/status")
+def update_request_status(req: Request, request_id: int = Form(...), status: str = Form(...), note: str = Form("")):
+    if (g := guard(req)):
+        return g
+    try:
+        note=(note or "").strip()[:500]
+        db.update_counseling_request(request_id,status,note)
+    except ValueError:
+        return HTMLResponse("وضعیت انتخاب‌شده معتبر نیست.", status_code=400)
+    return RedirectResponse("/admin/requests", status_code=303)
 
 
 # ---------- Daily reports / counselor control ----------
