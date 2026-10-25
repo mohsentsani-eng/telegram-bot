@@ -195,6 +195,22 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_questions_active_difficulty
         ON questions(active, difficulty);
     """)
+    # Additive workflow table; existing student/request records remain untouched.
+    c.executescript("""
+    CREATE TABLE IF NOT EXISTS counseling_request_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_id INTEGER NOT NULL,
+        old_status TEXT,
+        new_status TEXT NOT NULL,
+        note TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(request_id) REFERENCES counseling_requests(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_counseling_requests_student_type_created
+        ON counseling_requests(student_id,request_type,created_at);
+    CREATE INDEX IF NOT EXISTS idx_counseling_history_request
+        ON counseling_request_history(request_id,created_at);
+    """)
     c.commit()
     c.close()
     ensure_question_bank_seed()
@@ -754,8 +770,58 @@ def save_plan(student_id, title, payload):
                         (student_id,title,json.dumps(payload,ensure_ascii=False))); c.commit(); c.close()
 
 def request_counseling(student_id, typ, note=""):
-    c=conn(); c.execute("INSERT INTO counseling_requests(student_id,request_type,note) VALUES(?,?,?)",
-                        (student_id,typ,note)); c.commit(); c.close()
+    """Create one active request per student/type within 15 minutes; return (id, created)."""
+    c=conn()
+    try:
+        row=c.execute(
+            """SELECT id FROM counseling_requests
+               WHERE student_id=? AND request_type=? AND status IN ('new','تماس گرفته شد','نیازمند پیگیری')
+                 AND created_at >= datetime('now','-15 minutes')
+               ORDER BY id DESC LIMIT 1""",
+            (student_id,typ)
+        ).fetchone()
+        if row:
+            c.close()
+            return int(row["id"]), False
+        cur=c.execute(
+            "INSERT INTO counseling_requests(student_id,request_type,note) VALUES(?,?,?)",
+            (student_id,typ,note)
+        )
+        rid=int(cur.lastrowid)
+        c.execute(
+            "INSERT INTO counseling_request_history(request_id,old_status,new_status,note) VALUES(?,NULL,'new',?)",
+            (rid, note or "ثبت درخواست")
+        )
+        c.commit()
+        c.close()
+        return rid, True
+    except Exception:
+        c.close()
+        raise
+
+def update_counseling_request(request_id, status, note=""):
+    allowed={"new","contacted","no_answer","followup","registered","closed"}
+    if status not in allowed:
+        raise ValueError("وضعیت درخواست نامعتبر است")
+    c=conn()
+    row=c.execute("SELECT status FROM counseling_requests WHERE id=?",(request_id,)).fetchone()
+    if not row:
+        c.close()
+        return False
+    old=row["status"]
+    c.execute("UPDATE counseling_requests SET status=?, note=CASE WHEN ?='' THEN note ELSE ? END WHERE id=?",
+              (status,note,note,request_id))
+    c.execute("INSERT INTO counseling_request_history(request_id,old_status,new_status,note) VALUES(?,?,?,?)",
+              (request_id,old,status,note or "تغییر وضعیت در پنل مدیریت"))
+    c.commit()
+    c.close()
+    return True
+
+def counseling_request_history(request_id):
+    c=conn()
+    rows=c.execute("SELECT * FROM counseling_request_history WHERE request_id=? ORDER BY id DESC",(request_id,)).fetchall()
+    c.close()
+    return rows
 
 
 def upsert_goal(student_id, goal, target_value=""):
