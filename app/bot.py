@@ -831,7 +831,7 @@ async def send_staff_direct_reply(message:Message,state:FSMContext):
     if not reply_text:
         return await message.answer("لطفاً متن پاسخ را وارد کنید.")
     try:
-        await bot.send_message(int(student_id),"💬 <b>پاسخ مرکز ترنم همدلی</b>\\n\\n"+html.escape(reply_text))
+        await bot.send_message(int(student_id),"💬 <b>پاسخ مرکز ترنم همدلی</b>\n\n"+html.escape(reply_text))
     except Exception as exc:
         print(f"[HUMAN_CONTACT] direct reply delivery failed: {type(exc).__name__}: {exc}",flush=True)
         await state.clear()
