@@ -735,8 +735,33 @@ async def receive_request_contact(message:Message,state:FSMContext):
 class HumanContact(StatesGroup):
     waiting_for_message=State()
 
+
 class StaffReply(StatesGroup):
     waiting_for_reply=State()
+
+class StaffLiveChat(StatesGroup):
+    messaging=State()
+
+def _human_chat_status(student_id:int):
+    with db.conn() as c:
+        c.execute("CREATE TABLE IF NOT EXISTS human_chat_sessions (student_telegram_id INTEGER PRIMARY KEY, status TEXT NOT NULL DEFAULT 'closed', updated_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+        row=c.execute("SELECT status FROM human_chat_sessions WHERE student_telegram_id=?",(student_id,)).fetchone()
+        return row["status"] if row else "closed"
+
+def _set_human_chat_status(student_id:int,status:str):
+    with db.conn() as c:
+        c.execute("CREATE TABLE IF NOT EXISTS human_chat_sessions (student_telegram_id INTEGER PRIMARY KEY, status TEXT NOT NULL DEFAULT 'closed', updated_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+        c.execute("INSERT INTO human_chat_sessions(student_telegram_id,status,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(student_telegram_id) DO UPDATE SET status=excluded.status, updated_at=CURRENT_TIMESTAMP",(student_id,status))
+
+def _staff_chat_markup(student_id:int,status:str="open"):
+    if status=="open":
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💬 ادامه گفتگو / ارسال پیام",callback_data=f"staff_chat_open:{student_id}")],
+            [InlineKeyboardButton(text="🔒 بستن گفتگو",callback_data=f"staff_chat_close:{student_id}")]
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💬 باز کردن گفتگو",callback_data=f"staff_chat_open:{student_id}")]
+    ])
 
 @dp.message(F.text=="💬 ارتباط با مشاور")
 async def start_human_contact(message:Message,state:FSMContext):
@@ -784,6 +809,8 @@ async def send_human_contact_message(message:Message,state:FSMContext):
             "برای پاسخ، دکمه «پاسخ مستقیم به دانش‌آموز» را بزنید."
             ,reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text="✉️ پاسخ مستقیم به دانش‌آموز", callback_data=f"staff_reply:{message.from_user.id}")
+            ],[
+                InlineKeyboardButton(text="💬 باز کردن گفتگو", callback_data=f"staff_chat_open:{message.from_user.id}")
             ]])
         )
     except Exception as exc:
@@ -838,6 +865,74 @@ async def send_staff_direct_reply(message:Message,state:FSMContext):
         return await message.answer("ارسال پاسخ ناموفق بود. مطمئن شوید دانش‌آموز بات را Start کرده است.")
     await state.clear()
     await message.answer("✅ پاسخ از طریق بات برای دانش‌آموز ارسال شد.")
+
+
+@dp.callback_query(F.data.startswith("staff_chat_open:"))
+async def open_staff_live_chat(cq:CallbackQuery,state:FSMContext):
+    admin_id=(os.getenv("ADMIN_TELEGRAM_ID","") or "").strip()
+    if not admin_id.isdigit() or cq.from_user.id!=int(admin_id):
+        return await cq.answer("این گزینه فقط برای مدیر مرکز فعال است.",show_alert=True)
+    part=(cq.data or "").split(":",1)
+    if len(part)!=2 or not part[1].isdigit():
+        return await cq.answer("شناسه دانش‌آموز معتبر نیست.",show_alert=True)
+    student_id=int(part[1])
+    student=db.get_student_by_tg(student_id)
+    if not student:
+        return await cq.answer("پرونده دانش‌آموز پیدا نشد.",show_alert=True)
+    _set_human_chat_status(student_id,"open")
+    await state.clear()
+    await state.update_data(reply_student_id=student_id)
+    await state.set_state(StaffLiveChat.messaging)
+    await cq.answer("گفتگو باز شد")
+    await cq.message.answer(
+        f"💬 <b>گفتگوی باز با دانش‌آموز {html.escape(str(_student_field(student,'first_name','') or ''))}</b>\n"
+        f"شناسه: <code>{student_id}</code>\n\n"
+        "هر پیامی که اینجا بفرستید برای دانش‌آموز ارسال می‌شود. پاسخ‌های دانش‌آموز نیز در همین بات برای شما نمایش داده می‌شوند.\n"
+        "برای پایان، از دکمه «🔒 بستن گفتگو» استفاده کنید.",
+        reply_markup=_staff_chat_markup(student_id,"open")
+    )
+
+@dp.callback_query(F.data.startswith("staff_chat_close:"))
+async def close_staff_live_chat(cq:CallbackQuery,state:FSMContext):
+    admin_id=(os.getenv("ADMIN_TELEGRAM_ID","") or "").strip()
+    if not admin_id.isdigit() or cq.from_user.id!=int(admin_id):
+        return await cq.answer("این گزینه فقط برای مدیر مرکز فعال است.",show_alert=True)
+    part=(cq.data or "").split(":",1)
+    if len(part)!=2 or not part[1].isdigit():
+        return await cq.answer("شناسه دانش‌آموز معتبر نیست.",show_alert=True)
+    student_id=int(part[1])
+    _set_human_chat_status(student_id,"closed")
+    data=await state.get_data()
+    if data.get("reply_student_id")==student_id:
+        await state.clear()
+    await cq.answer("گفتگو بسته شد")
+    try:
+        await cq.message.edit_reply_markup(reply_markup=_staff_chat_markup(student_id,"closed"))
+    except Exception:
+        pass
+    await cq.message.answer(f"🔒 گفتگوی دانش‌آموز <code>{student_id}</code> بسته شد. برای ادامه، دوباره «💬 باز کردن گفتگو» را بزنید.")
+
+@dp.message(StaffLiveChat.messaging,F.text)
+async def send_live_chat_message(message:Message,state:FSMContext):
+    admin_id=(os.getenv("ADMIN_TELEGRAM_ID","") or "").strip()
+    if not admin_id.isdigit() or message.from_user.id!=int(admin_id):
+        await state.clear()
+        return
+    data=await state.get_data()
+    student_id=data.get("reply_student_id")
+    if not student_id or _human_chat_status(int(student_id))!="open":
+        await state.clear()
+        return await message.answer("گفتگو بسته است. از دکمه «باز کردن گفتگو» شروع کنید.")
+    if (message.text or "").strip()=="/cancelreply":
+        await state.clear()
+        return await message.answer("حالت ارسال پیام پایان یافت؛ گفتگو همچنان باز است.")
+    try:
+        await bot.send_message(int(student_id),"💬 <b>پیام مرکز ترنم همدلی</b>\n\n"+html.escape((message.text or "").strip()[:3500]))
+    except Exception as exc:
+        print(f"[HUMAN_CONTACT] live message failed: {type(exc).__name__}: {exc}",flush=True)
+        return await message.answer("ارسال پیام ناموفق بود. گفتگو همچنان باز است.")
+    await message.answer("✅ پیام ارسال شد. می‌توانید پیام بعدی را هم بفرستید.",reply_markup=_staff_chat_markup(int(student_id),"open"))
+
 
 @dp.message(F.text.startswith("/reply "))
 async def reply_to_student(message:Message):
@@ -1482,6 +1577,7 @@ async def notify_center_request(student, request_type: str, note: str = ""):
     student_tg_id = int(_student_field(student, "telegram_id", 0) or 0)
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✉️ پاسخ مستقیم به دانش‌آموز", callback_data=f"staff_reply:{student_tg_id}")],
+        [InlineKeyboardButton(text="💬 باز کردن گفتگو", callback_data=f"staff_chat_open:{student_tg_id}")],
         [InlineKeyboardButton(text="🔐 ورود به پنل مشاور", url=portal_url)]
     ])
     delivered = 0
@@ -2606,6 +2702,19 @@ async def menu(message:Message,state:FSMContext):
     s=db.get_student_by_tg(message.from_user.id)
     if not s:
         return await begin_registration(message,state)
+    admin_id=(os.getenv("ADMIN_TELEGRAM_ID","") or "").strip()
+    if admin_id.isdigit() and message.from_user.id != int(admin_id) and _human_chat_status(message.from_user.id)=="open":
+        first=html.escape(str(_student_field(s,"first_name","") or ""))
+        last=html.escape(str(_student_field(s,"last_name","") or ""))
+        body=html.escape((message.text or "").strip()[:3500])
+        try:
+            await bot.send_message(int(admin_id),
+                f"💬 <b>پیام جدید در گفتگوی باز</b>\\n👤 {first} {last}\\n🆔 <code>{message.from_user.id}</code>\\n\\n{body}",
+                reply_markup=_staff_chat_markup(message.from_user.id,"open"))
+        except Exception as exc:
+            print(f"[HUMAN_CONTACT] student live relay failed: {type(exc).__name__}: {exc}",flush=True)
+            return await message.answer("ارسال پیام ناموفق بود. لطفاً کمی بعد دوباره تلاش کنید.")
+        return await message.answer("✅ پیام شما برای مشاور ارسال شد.")
     t=message.text
     if t==HOME:
         await state.clear(); return await message.answer("🏠 منوی اصلی ترنم همدلی",reply_markup=main_menu())
