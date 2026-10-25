@@ -1,4 +1,4 @@
-import os, json, random, asyncio, datetime, time
+import os, json, random, asyncio, datetime, time, html
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 from aiogram import Bot, Dispatcher, F
@@ -1262,14 +1262,70 @@ async def psych_start(message,state):
         reply_markup=nav(consent_options)
     )
 
+
+async def notify_counseling_request(message: Message, student, request_type: str, note: str = ""):
+    """Notify the center through configured staff Telegram IDs; never block request creation."""
+    recipients = set()
+    admin_id = (os.getenv("ADMIN_TELEGRAM_ID", "") or "").strip()
+    if admin_id.isdigit():
+        recipients.add(int(admin_id))
+
+    try:
+        counselor = db.active_counselor(student["id"])
+        counselor_id = _student_field(counselor, "telegram_id", "")
+        if str(counselor_id or "").strip().isdigit():
+            recipients.add(int(counselor_id))
+    except Exception as exc:
+        print(f"[REQUEST_NOTIFY] counselor lookup failed: {type(exc).__name__}", flush=True)
+
+    recipients.discard(message.from_user.id)
+    if not recipients:
+        print(
+            f"[REQUEST_NOTIFY] no staff recipient configured for request_type={request_type}; "
+            "set ADMIN_TELEGRAM_ID or assign a counselor with telegram_id",
+            flush=True,
+        )
+        return False
+
+    base_url = (os.getenv("PUBLIC_BASE_URL", "https://telegram-bot-production-5605.up.railway.app") or "").rstrip("/")
+    portal_url = base_url + "/counselor"
+    first = html.escape(str(_student_field(student, "first_name", "") or ""))
+    last = html.escape(str(_student_field(student, "last_name", "") or ""))
+    grade = html.escape(str(_student_field(student, "grade", "") or "نامشخص"))
+    track = html.escape(str(_student_field(student, "track", "") or "ثبت نشده"))
+    safe_note = html.escape(str(note or "")[:500])
+    kind = html.escape(request_type)
+    text = (
+        "📩 <b>درخواست جدید از بات ترنم همدلی</b>\\n\\n"
+        f"👤 دانش‌آموز: {first} {last}\\n"
+        f"🎓 پایه: {grade} | رشته: {track}\\n"
+        f"🆔 شناسه تلگرام: <code>{int(_student_field(student, 'telegram_id', 0) or 0)}</code>\\n"
+        f"📌 نوع درخواست: {kind}\\n"
+        + (f"📝 توضیح: {safe_note}\\n" if safe_note else "")
+        + "\\nلطفاً درخواست را در CRM بررسی و برای تماس/پیگیری اقدام کنید."
+    )
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔐 ورود به پنل مشاور", url=portal_url)]
+    ])
+    delivered = 0
+    for recipient in recipients:
+        try:
+            await bot.send_message(recipient, text, reply_markup=markup)
+            delivered += 1
+        except Exception as exc:
+            print(f"[REQUEST_NOTIFY] delivery failed: {type(exc).__name__}", flush=True)
+    return delivered > 0
+
 @dp.callback_query(F.data=="psych:counselor")
 async def psych_counselor_callback(cq:CallbackQuery):
     await cq.answer()
     s=db.get_student_by_tg(cq.from_user.id)
     if not s:
         return await cq.message.answer("ابتدا ثبت‌نام را کامل کنید.",reply_markup=main_menu())
-    db.request_counseling(s["id"],"psych_assessment_review","درخواست بررسی نتیجه غربالگری روان‌شناختی توسط مشاور")
-    await cq.message.answer("✅ درخواست بررسی تخصصی ثبت شد. نتیجه در پرونده شما ثبت است و مشاور آن را بررسی می‌کند.",reply_markup=main_menu())
+    note="درخواست بررسی نتیجه غربالگری روان‌شناختی توسط مشاور"
+    db.request_counseling(s["id"],"psych_assessment_review",note)
+    await notify_counseling_request(cq.message, s, "بررسی نتیجه ارزیابی روان‌شناختی", note)
+    await cq.message.answer("✅ درخواست بررسی تخصصی ثبت شد. نتیجه در پرونده شما ثبت است و درخواست برای پیگیری مرکز ارسال شد.",reply_markup=main_menu())
 
 @dp.message(Psych.answering)
 async def psych_ans(message:Message,state:FSMContext):
@@ -2385,17 +2441,23 @@ async def menu(message:Message,state:FSMContext):
     if t=="🎓 انتخاب رشته کنکور": return await konkur_start(message,state)
     if t=="🧭 انتخاب رشته نهم": return await ninth_start(message,state)
     if t=="🚀 کوچینگ تحصیلی":
-        db.request_counseling(s["id"],"coaching","علاقه‌مند به کوچینگ")
-        return await message.answer("✅ درخواست کوچینگ در CRM ثبت شد.",reply_markup=main_menu())
+        note="علاقه‌مند به کوچینگ"
+        db.request_counseling(s["id"],"coaching",note)
+        await notify_counseling_request(message, s, "کوچینگ تحصیلی", note)
+        return await message.answer("✅ درخواست کوچینگ ثبت شد و برای پیگیری به مرکز ارسال شد.",reply_markup=main_menu())
     if t=="👨‍👩‍👧 مشاوره والدین":
-        db.request_counseling(s["id"],"parents","درخواست مشاوره والدین")
-        return await message.answer("✅ درخواست مشاوره والدین ثبت شد.",reply_markup=main_menu())
+        note="درخواست مشاوره والدین"
+        db.request_counseling(s["id"],"parents",note)
+        await notify_counseling_request(message, s, "مشاوره والدین", note)
+        return await message.answer("✅ درخواست مشاوره والدین ثبت شد و برای پیگیری به مرکز ارسال شد.",reply_markup=main_menu())
     if t=="📞 درخواست مشاوره":
-        db.request_counseling(s["id"],"general","درخواست عمومی")
+        note="درخواست عمومی"
+        db.request_counseling(s["id"],"general",note)
         lead_id=db.upsert_lead_from_student(s["id"])
         if lead_id: db.set_lead_status(lead_id,"interested")
         db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"general"})
-        return await message.answer("✅ درخواست شما ثبت شد.",reply_markup=main_menu())
+        await notify_counseling_request(message, s, "درخواست مشاوره عمومی", note)
+        return await message.answer("✅ درخواست شما ثبت شد و برای پیگیری به مرکز ارسال شد.",reply_markup=main_menu())
 
 async def run_bot():
     # Polling is deliberately self-healing: temporary Telegram/network errors
