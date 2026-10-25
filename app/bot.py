@@ -665,19 +665,22 @@ async def global_main_action(message:Message,state:FSMContext):
     if t=="🎓 انتخاب رشته کنکور": return await konkur_start(message,state)
     if t=="🧭 انتخاب رشته نهم": return await ninth_start(message,state)
     if t=="🚀 کوچینگ تحصیلی":
-        db.request_counseling(s["id"],"coaching","علاقه‌مند به کوچینگ")
+        request_id,created=db.request_counseling(s["id"],"coaching","علاقه‌مند به کوچینگ")
+        await notify_center_request(request_id,s,"کوچینگ",created)
         lead_id=db.upsert_lead_from_student(s["id"])
         if lead_id: db.set_lead_status(lead_id,"interested")
         db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"coaching"})
         return await message.answer("✅ درخواست کوچینگ در CRM ثبت شد.",reply_markup=main_menu())
     if t=="👨‍👩‍👧 مشاوره والدین":
-        db.request_counseling(s["id"],"parents","درخواست مشاوره والدین")
+        request_id,created=db.request_counseling(s["id"],"parents","درخواست مشاوره والدین")
+        await notify_center_request(request_id,s,"مشاوره والدین",created)
         lead_id=db.upsert_lead_from_student(s["id"])
         if lead_id: db.set_lead_status(lead_id,"interested")
         db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"parents"})
         return await message.answer("✅ درخواست مشاوره والدین ثبت شد.",reply_markup=main_menu())
     if t=="📞 درخواست مشاوره":
-        db.request_counseling(s["id"],"general","درخواست عمومی")
+        request_id,created=db.request_counseling(s["id"],"general","درخواست عمومی")
+        await notify_center_request(request_id,s,"مشاوره عمومی",created)
         lead_id=db.upsert_lead_from_student(s["id"])
         if lead_id: db.set_lead_status(lead_id,"interested")
         db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"general"})
@@ -1268,7 +1271,8 @@ async def psych_counselor_callback(cq:CallbackQuery):
     s=db.get_student_by_tg(cq.from_user.id)
     if not s:
         return await cq.message.answer("ابتدا ثبت‌نام را کامل کنید.",reply_markup=main_menu())
-    db.request_counseling(s["id"],"psych_assessment_review","درخواست بررسی نتیجه غربالگری روان‌شناختی توسط مشاور")
+    request_id,created=db.request_counseling(s["id"],"psych_assessment_review","درخواست بررسی نتیجه غربالگری روان‌شناختی توسط مشاور")
+    await notify_center_request(request_id,s,"بررسی نتیجه غربالگری روان‌شناختی",created)
     await cq.message.answer("✅ درخواست بررسی تخصصی ثبت شد. نتیجه در پرونده شما ثبت است و مشاور آن را بررسی می‌کند.",reply_markup=main_menu())
 
 @dp.message(Psych.answering)
@@ -2096,7 +2100,8 @@ async def planner_counselor(cq:CallbackQuery):
     await cq.answer()
     s=db.get_student_by_tg(cq.from_user.id)
     if not s: return await cq.message.answer("ابتدا ثبت‌نام را کامل کن.",reply_markup=main_menu())
-    db.request_counseling(s["id"],"plan_review","درخواست اصلاح و شخصی‌سازی برنامه مطالعه توسط مشاور مرکز ترنم همدلی")
+    request_id,created=db.request_counseling(s["id"],"plan_review","درخواست اصلاح و شخصی‌سازی برنامه مطالعه توسط مشاور مرکز ترنم همدلی")
+    await notify_center_request(request_id,s,"بازبینی برنامه مطالعه",created)
     await cq.message.answer("✅ درخواست شما ثبت شد.\n\nمشاور مرکز ترنم همدلی می‌تواند برنامه اولیه را بر اساس شرایط واقعی، آزمون‌ها و روند مطالعه‌ات بازبینی و شخصی‌سازی کند.",reply_markup=main_menu())
 
 class QuickAssessment(StatesGroup):
@@ -2385,17 +2390,47 @@ async def menu(message:Message,state:FSMContext):
     if t=="🎓 انتخاب رشته کنکور": return await konkur_start(message,state)
     if t=="🧭 انتخاب رشته نهم": return await ninth_start(message,state)
     if t=="🚀 کوچینگ تحصیلی":
-        db.request_counseling(s["id"],"coaching","علاقه‌مند به کوچینگ")
+        request_id,created=db.request_counseling(s["id"],"coaching","علاقه‌مند به کوچینگ")
+        await notify_center_request(request_id,s,"کوچینگ",created)
         return await message.answer("✅ درخواست کوچینگ در CRM ثبت شد.",reply_markup=main_menu())
     if t=="👨‍👩‍👧 مشاوره والدین":
-        db.request_counseling(s["id"],"parents","درخواست مشاوره والدین")
+        request_id,created=db.request_counseling(s["id"],"parents","درخواست مشاوره والدین")
+        await notify_center_request(request_id,s,"مشاوره والدین",created)
         return await message.answer("✅ درخواست مشاوره والدین ثبت شد.",reply_markup=main_menu())
     if t=="📞 درخواست مشاوره":
-        db.request_counseling(s["id"],"general","درخواست عمومی")
+        request_id,created=db.request_counseling(s["id"],"general","درخواست عمومی")
+        await notify_center_request(request_id,s,"مشاوره عمومی",created)
         lead_id=db.upsert_lead_from_student(s["id"])
         if lead_id: db.set_lead_status(lead_id,"interested")
         db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"general"})
         return await message.answer("✅ درخواست شما ثبت شد.",reply_markup=main_menu())
+
+async def notify_center_request(request_id, student, request_type, created=True):
+    """Notify the center's configured Telegram admin about a newly created request."""
+    admin_id=(os.getenv("ADMIN_TELEGRAM_ID") or "").strip()
+    if not created or not admin_id:
+        return
+    try:
+        username=(student.get("username") if isinstance(student,dict) else student["username"]) or ""
+        first=(student.get("first_name") if isinstance(student,dict) else student["first_name"]) or ""
+        last=(student.get("last_name") if isinstance(student,dict) else student["last_name"]) or ""
+        phone=(student.get("phone") if isinstance(student,dict) else student["phone"]) or "ثبت نشده"
+        tg_id=(student.get("telegram_id") if isinstance(student,dict) else student["telegram_id"])
+        profile=("https://t.me/"+username.lstrip("@")) if username else ("tg://user?id="+str(tg_id))
+        base=os.getenv("PUBLIC_BASE_URL","https://telegram-bot-production-5605.up.railway.app").rstrip("/")
+        await bot.send_message(
+            int(admin_id),
+            "🔔 <b>درخواست جدید مشاوره ترنم همدلی</b>\n"
+            f"شماره درخواست: #{request_id}\n"
+            f"نام: {first} {last}\n"
+            f"نوع درخواست: {request_type}\n"
+            f"تلفن ثبت‌شده: {phone}\n"
+            f"شناسه تلگرام: <code>{tg_id}</code>\n"
+            f"پروفایل تلگرام: {profile}\n"
+            f"پنل پیگیری: {base}/admin/requests"
+        )
+    except Exception as exc:
+        print(f"[REQUEST] center notification failed: {type(exc).__name__}: {exc}",flush=True)
 
 async def run_bot():
     # Polling is deliberately self-healing: temporary Telegram/network errors
