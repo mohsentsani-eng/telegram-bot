@@ -1296,13 +1296,13 @@ async def notify_center_request(message: Message, student, request_type: str, no
     safe_note = html.escape(str(note or "")[:500])
     kind = html.escape(request_type)
     text = (
-        "📩 <b>درخواست جدید از بات ترنم همدلی</b>\\n\\n"
-        f"👤 دانش‌آموز: {first} {last}\\n"
-        f"🎓 پایه: {grade} | رشته: {track}\\n"
-        f"🆔 شناسه تلگرام: <code>{int(_student_field(student, 'telegram_id', 0) or 0)}</code>\\n"
-        f"📌 نوع درخواست: {kind}\\n"
-        + (f"📝 توضیح: {safe_note}\\n" if safe_note else "")
-        + "\\nلطفاً درخواست را در CRM بررسی و برای تماس/پیگیری اقدام کنید."
+        "📩 <b>درخواست جدید از بات ترنم همدلی</b>\n\n"
+        f"👤 دانش‌آموز: {first} {last}\n"
+        f"🎓 پایه: {grade} | رشته: {track}\n"
+        f"🆔 شناسه تلگرام: <code>{int(_student_field(student, 'telegram_id', 0) or 0)}</code>\n"
+        f"📌 نوع درخواست: {kind}\n"
+        + (f"📝 توضیح: {safe_note}\n" if safe_note else "")
+        + "\nلطفاً درخواست را در CRM بررسی و برای تماس/پیگیری اقدام کنید."
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔐 ورود به پنل مشاور", url=portal_url)]
