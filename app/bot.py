@@ -933,25 +933,6 @@ async def send_live_chat_message(message:Message,state:FSMContext):
         return await message.answer("ارسال پیام ناموفق بود. گفتگو همچنان باز است.")
     await message.answer("✅ پیام ارسال شد. می‌توانید پیام بعدی را هم بفرستید.",reply_markup=_staff_chat_markup(int(student_id),"open"))
 
-@dp.message(F.text)
-async def relay_student_live_chat(message:Message):
-    admin_id=(os.getenv("ADMIN_TELEGRAM_ID","") or "").strip()
-    if not admin_id.isdigit() or message.from_user.id==int(admin_id):
-        return
-    if _human_chat_status(message.from_user.id)!="open":
-        return
-    student=db.get_student_by_tg(message.from_user.id)
-    if not student:
-        return
-    first=html.escape(str(_student_field(student,"first_name","") or ""))
-    last=html.escape(str(_student_field(student,"last_name","") or ""))
-    body=html.escape((message.text or "").strip()[:3500])
-    try:
-        await bot.send_message(int(admin_id),
-            f"💬 <b>پیام جدید در گفتگوی باز</b>\n👤 {first} {last}\n🆔 <code>{message.from_user.id}</code>\n\n{body}",
-            reply_markup=_staff_chat_markup(message.from_user.id,"open"))
-    except Exception as exc:
-        print(f"[HUMAN_CONTACT] student live relay failed: {type(exc).__name__}: {exc}",flush=True)
 
 @dp.message(F.text.startswith("/reply "))
 async def reply_to_student(message:Message):
@@ -2721,6 +2702,19 @@ async def menu(message:Message,state:FSMContext):
     s=db.get_student_by_tg(message.from_user.id)
     if not s:
         return await begin_registration(message,state)
+    admin_id=(os.getenv("ADMIN_TELEGRAM_ID","") or "").strip()
+    if admin_id.isdigit() and message.from_user.id != int(admin_id) and _human_chat_status(message.from_user.id)=="open":
+        first=html.escape(str(_student_field(s,"first_name","") or ""))
+        last=html.escape(str(_student_field(s,"last_name","") or ""))
+        body=html.escape((message.text or "").strip()[:3500])
+        try:
+            await bot.send_message(int(admin_id),
+                f"💬 <b>پیام جدید در گفتگوی باز</b>\\n👤 {first} {last}\\n🆔 <code>{message.from_user.id}</code>\\n\\n{body}",
+                reply_markup=_staff_chat_markup(message.from_user.id,"open"))
+        except Exception as exc:
+            print(f"[HUMAN_CONTACT] student live relay failed: {type(exc).__name__}: {exc}",flush=True)
+            return await message.answer("ارسال پیام ناموفق بود. لطفاً کمی بعد دوباره تلاش کنید.")
+        return await message.answer("✅ پیام شما برای مشاور ارسال شد.")
     t=message.text
     if t==HOME:
         await state.clear(); return await message.answer("🏠 منوی اصلی ترنم همدلی",reply_markup=main_menu())
