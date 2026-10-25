@@ -80,7 +80,7 @@ def main_menu():
         ["🚀 کوچینگ تحصیلی","🧭 انتخاب رشته نهم"],
         ["🎓 انتخاب رشته کنکور","👨‍👩‍👧 مشاوره والدین"],
         ["🤖 دستیار هوشمند","👤 پرونده من"],
-        ["📞 درخواست مشاوره"],
+        ["📞 درخواست مشاوره","💬 ارتباط با مشاور"],
         ["🔄 ثبت‌نام مجدد"]
     ])
 
@@ -360,7 +360,7 @@ MAIN_ACTIONS = {
     "🤖 دستیار هوشمند", "👤 پرونده من",
     "📤 معرفی به دوست",
     "📸 پیج اینستاگرام ترنم همدلی",
-    "📞 درخواست مشاوره", "🔄 ثبت‌نام مجدد", "🌙 گزارش امروز",
+    "📞 درخواست مشاوره", "💬 ارتباط با مشاور", "🔄 ثبت‌نام مجدد", "🌙 گزارش امروز",
 }
 
 # High-priority escape hatch for the quick-assessment button.
@@ -731,6 +731,80 @@ async def receive_request_contact(message:Message,state:FSMContext):
     await state.clear()
     await message.answer("✅ درخواست شما ثبت شد. شماره تماس و شناسه تلگرام برای پیگیری به مرکز ارسال شد.",reply_markup=main_menu())
 
+
+class HumanContact(StatesGroup):
+    waiting_for_message=State()
+
+@dp.message(F.text=="💬 ارتباط با مشاور")
+async def start_human_contact(message:Message,state:FSMContext):
+    student=db.get_student_by_tg(message.from_user.id)
+    if not student:
+        return await message.answer("برای ارتباط با مشاور، ابتدا ثبت‌نام خود را تکمیل کنید.",reply_markup=main_menu())
+    await state.clear()
+    await state.set_state(HumanContact.waiting_for_message)
+    await message.answer(
+        "💬 <b>ارتباط با مشاور ترنم همدلی</b>\n\n"
+        "پیام خود را بنویسید تا برای مسئول مرکز ارسال شود. پاسخ از همین بات برای شما فرستاده می‌شود. "
+        "لطفاً اطلاعات ضروری را بنویسید و از ارسال اطلاعات حساس غیرضروری خودداری کنید.\n\n"
+        "برای انصراف، «لغو پیام» را بفرستید.",
+        reply_markup=kb([["لغو پیام"]])
+    )
+
+@dp.message(HumanContact.waiting_for_message,F.text=="لغو پیام")
+async def cancel_human_contact(message:Message,state:FSMContext):
+    await state.clear()
+    await message.answer("ارتباط لغو شد؛ پیامی ارسال نشد.",reply_markup=main_menu())
+
+@dp.message(HumanContact.waiting_for_message,F.text)
+async def send_human_contact_message(message:Message,state:FSMContext):
+    admin_id=(os.getenv("ADMIN_TELEGRAM_ID","") or "").strip()
+    if not admin_id.isdigit():
+        await state.clear()
+        return await message.answer("ارتباط با مرکز فعلاً در دسترس نیست. لطفاً بعداً دوباره تلاش کنید.",reply_markup=main_menu())
+    student=db.get_student_by_tg(message.from_user.id)
+    if not student:
+        await state.clear()
+        return await message.answer("پرونده دانش‌آموزی پیدا نشد. لطفاً ابتدا ثبت‌نام کنید.",reply_markup=main_menu())
+    first=html.escape(str(_student_field(student,"first_name","") or ""))
+    last=html.escape(str(_student_field(student,"last_name","") or ""))
+    grade=html.escape(str(_student_field(student,"grade","") or "نامشخص"))
+    text=html.escape((message.text or "").strip()[:3500])
+    username=html.escape("@"+message.from_user.username if message.from_user.username else "ندارد")
+    try:
+        await bot.send_message(
+            int(admin_id),
+            "💬 <b>پیام جدید برای ارتباط با مشاور</b>\n\n"
+            f"👤 دانش‌آموز: {first} {last}\n🎓 پایه: {grade}\n"
+            f"🆔 شناسه تلگرام: <code>{message.from_user.id}</code>\n"
+            f"🔗 نام کاربری: {username}\n\n"
+            f"✉️ پیام:\n{text}\n\n"
+            "برای پاسخ، این قالب را ارسال کنید:\n"
+            f"<code>/reply {message.from_user.id} متن پاسخ</code>"
+        )
+    except Exception as exc:
+        print(f"[HUMAN_CONTACT] delivery failed: {type(exc).__name__}",flush=True)
+        return await message.answer("ارسال پیام به مرکز ناموفق بود. لطفاً کمی بعد دوباره تلاش کنید.",reply_markup=main_menu())
+    await state.clear()
+    await message.answer("✅ پیام شما به مرکز ارسال شد. پاسخ از طریق همین بات برایتان فرستاده می‌شود.",reply_markup=main_menu())
+
+@dp.message(F.text.startswith("/reply "))
+async def reply_to_student(message:Message):
+    admin_id=(os.getenv("ADMIN_TELEGRAM_ID","") or "").strip()
+    if not admin_id.isdigit() or message.from_user.id!=int(admin_id):
+        return await message.answer("این دستور فقط برای مدیر مرکز فعال است.")
+    parts=(message.text or "").split(maxsplit=2)
+    if len(parts)<3 or not parts[1].isdigit() or not parts[2].strip():
+        return await message.answer("قالب درست:\n/reply شناسه_تلگرام متن پاسخ")
+    student_id=int(parts[1])
+    reply_text=parts[2].strip()[:3500]
+    if not db.get_student_by_tg(student_id):
+        return await message.answer("دانش‌آموزی با این شناسه در پرونده‌ها پیدا نشد.")
+    try:
+        await bot.send_message(student_id,"💬 <b>پاسخ مرکز ترنم همدلی</b>\n\n"+html.escape(reply_text))
+    except Exception as exc:
+        print(f"[HUMAN_CONTACT] reply delivery failed: {type(exc).__name__}",flush=True)
+        return await message.answer("ارسال پاسخ ناموفق بود. مطمئن شوید دانش‌آموز بات را Start کرده است.")
+    await message.answer("✅ پاسخ از طریق بات ارسال شد.")
 
 @dp.message(CommandStart())
 async def start(message:Message,state:FSMContext):
