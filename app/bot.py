@@ -92,6 +92,9 @@ def nav(items):
 class Reg(StatesGroup):
     first=State(); last=State(); grade=State(); track=State(); city=State(); phone=State()
 
+class ContactRequest(StatesGroup):
+    waiting_for_contact=State()
+
 class Academic(StatesGroup):
     subject=State(); chapter=State(); topic=State(); difficulty=State(); answering=State()
 
@@ -665,23 +668,68 @@ async def global_main_action(message:Message,state:FSMContext):
     if t=="🎓 انتخاب رشته کنکور": return await konkur_start(message,state)
     if t=="🧭 انتخاب رشته نهم": return await ninth_start(message,state)
     if t=="🚀 کوچینگ تحصیلی":
-        db.request_counseling(s["id"],"coaching","علاقه‌مند به کوچینگ")
-        lead_id=db.upsert_lead_from_student(s["id"])
-        if lead_id: db.set_lead_status(lead_id,"interested")
-        db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"coaching"})
-        return await message.answer("✅ درخواست کوچینگ در CRM ثبت شد.",reply_markup=main_menu())
+        return await start_contact_request(message,state,s,"coaching","علاقه‌مند به کوچینگ")
     if t=="👨‍👩‍👧 مشاوره والدین":
-        db.request_counseling(s["id"],"parents","درخواست مشاوره والدین")
-        lead_id=db.upsert_lead_from_student(s["id"])
-        if lead_id: db.set_lead_status(lead_id,"interested")
-        db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"parents"})
-        return await message.answer("✅ درخواست مشاوره والدین ثبت شد.",reply_markup=main_menu())
+        return await start_contact_request(message,state,s,"parents","درخواست مشاوره والدین")
     if t=="📞 درخواست مشاوره":
-        db.request_counseling(s["id"],"general","درخواست عمومی")
-        lead_id=db.upsert_lead_from_student(s["id"])
-        if lead_id: db.set_lead_status(lead_id,"interested")
-        db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),s["id"],{"type":"general"})
-        return await message.answer("✅ درخواست شما ثبت شد.",reply_markup=main_menu())
+        return await start_contact_request(message,state,s,"general","درخواست عمومی")
+
+async def start_contact_request(message:Message,state:FSMContext,student,request_type:str,note:str):
+    # Ask explicitly for consent and use Telegram's native contact-sharing button.
+    await state.clear()
+    await state.update_data(contact_request_type=request_type,contact_request_note=note,contact_student_id=student["id"])
+    await state.set_state(ContactRequest.waiting_for_contact)
+    contact_keyboard=ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📱 اشتراک‌گذاری شماره من",request_contact=True)],
+            [KeyboardButton(text="لغو درخواست")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await message.answer(
+        "برای اینکه مشاور مرکز بتواند درباره درخواست شما تماس بگیرد، لطفاً شماره تماس خود را با دکمه زیر به‌صورت امن از طریق تلگرام ارسال کنید. "
+        "شماره فقط پس از لمس دکمه شما به بات ارسال می‌شود. برای ثبت این درخواست، اشتراک‌گذاری شماره لازم است.",
+        reply_markup=contact_keyboard
+    )
+
+@dp.message(ContactRequest.waiting_for_contact, F.text=="لغو درخواست")
+async def cancel_contact_request(message:Message,state:FSMContext):
+    await state.clear()
+    await message.answer("درخواست ثبت نشد و شماره‌ای دریافت نکردیم. هر زمان خواستید می‌توانید دوباره اقدام کنید.",reply_markup=main_menu())
+
+@dp.message(ContactRequest.waiting_for_contact, F.contact)
+async def receive_request_contact(message:Message,state:FSMContext):
+    contact=message.contact
+    # Only accept the contact card for the account currently chatting with the bot.
+    if not contact or not contact.phone_number or contact.user_id != message.from_user.id:
+        return await message.answer(
+            "لطفاً از دکمه «📱 اشتراک‌گذاری شماره من» استفاده کنید تا شماره متعلق به همین حساب تلگرام باشد.",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="📱 اشتراک‌گذاری شماره من",request_contact=True)],[KeyboardButton(text="لغو درخواست")]],
+                resize_keyboard=True,one_time_keyboard=True
+            )
+        )
+    data=await state.get_data()
+    student=db.get_student_by_tg(message.from_user.id)
+    if not student:
+        await state.clear()
+        return await message.answer("ابتدا ثبت‌نام را تکمیل کنید.",reply_markup=main_menu())
+    phone=str(contact.phone_number).strip()
+    db.update_student(message.from_user.id,phone=phone)
+    lead_id=db.upsert_lead_from_student(student["id"])
+    if lead_id:
+        db.set_lead_status(lead_id,"interested")
+    request_type=str(data.get("contact_request_type") or "general")
+    note=str(data.get("contact_request_note") or "درخواست مشاوره")
+    db.request_counseling(student["id"],request_type,note)
+    db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),student["id"],{"type":request_type,"phone_shared":True})
+    # Re-read so the notification and CRM contain the newly shared number.
+    student=db.get_student_by_tg(message.from_user.id)
+    await notify_center_request(student,note, f"شماره تماس: {phone}")
+    await state.clear()
+    await message.answer("✅ درخواست شما ثبت شد. شماره تماس و شناسه تلگرام برای پیگیری به مرکز ارسال شد.",reply_markup=main_menu())
+
 
 @dp.message(CommandStart())
 async def start(message:Message,state:FSMContext):
