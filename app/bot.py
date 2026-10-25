@@ -726,7 +726,8 @@ async def receive_request_contact(message:Message,state:FSMContext):
     db.track_referral_event(message.from_user.id,"counseling_request",db.first_referral_source(message.from_user.id),student["id"],{"type":request_type,"phone_shared":True})
     # Re-read so the notification and CRM contain the newly shared number.
     student=db.get_student_by_tg(message.from_user.id)
-    await notify_center_request(student,note, f"شماره تماس: {phone}")
+    request_labels={"general":"درخواست مشاوره عمومی","coaching":"کوچینگ تحصیلی","parents":"مشاوره والدین"}
+    await notify_center_request(student,request_labels.get(request_type,"درخواست مشاوره"), f"{note}؛ شماره تماس: {phone}")
     await state.clear()
     await message.answer("✅ درخواست شما ثبت شد. شماره تماس و شناسه تلگرام برای پیگیری به مرکز ارسال شد.",reply_markup=main_menu())
 
