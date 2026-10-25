@@ -2709,7 +2709,7 @@ async def menu(message:Message,state:FSMContext):
         body=html.escape((message.text or "").strip()[:3500])
         try:
             await bot.send_message(int(admin_id),
-                f"💬 <b>پیام جدید در گفتگوی باز</b>\\n👤 {first} {last}\\n🆔 <code>{message.from_user.id}</code>\\n\\n{body}",
+                f"💬 <b>پیام جدید در گفتگوی باز</b>\n👤 {first} {last}\n🆔 <code>{message.from_user.id}</code>\n\n{body}",
                 reply_markup=_staff_chat_markup(message.from_user.id,"open"))
         except Exception as exc:
             print(f"[HUMAN_CONTACT] student live relay failed: {type(exc).__name__}: {exc}",flush=True)
