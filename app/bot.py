@@ -735,6 +735,9 @@ async def receive_request_contact(message:Message,state:FSMContext):
 class HumanContact(StatesGroup):
     waiting_for_message=State()
 
+class StaffReply(StatesGroup):
+    waiting_for_reply=State()
+
 @dp.message(F.text=="💬 ارتباط با مشاور")
 async def start_human_contact(message:Message,state:FSMContext):
     student=db.get_student_by_tg(message.from_user.id)
@@ -778,14 +781,63 @@ async def send_human_contact_message(message:Message,state:FSMContext):
             f"🆔 شناسه تلگرام: <code>{message.from_user.id}</code>\n"
             f"🔗 نام کاربری: {username}\n\n"
             f"✉️ پیام:\n{text}\n\n"
-            "برای پاسخ، این قالب را ارسال کنید:\n"
-            f"<code>/reply {message.from_user.id} متن پاسخ</code>"
+            "برای پاسخ، دکمه «پاسخ مستقیم به دانش‌آموز» را بزنید."
+            ,reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="✉️ پاسخ مستقیم به دانش‌آموز", callback_data=f"staff_reply:{message.from_user.id}")
+            ]])
         )
     except Exception as exc:
         print(f"[HUMAN_CONTACT] delivery failed: {type(exc).__name__}",flush=True)
         return await message.answer("ارسال پیام به مرکز ناموفق بود. لطفاً کمی بعد دوباره تلاش کنید.",reply_markup=main_menu())
     await state.clear()
     await message.answer("✅ پیام شما به مرکز ارسال شد. پاسخ از طریق همین بات برایتان فرستاده می‌شود.",reply_markup=main_menu())
+
+
+@dp.callback_query(F.data.startswith("staff_reply:"))
+async def start_staff_direct_reply(cq:CallbackQuery,state:FSMContext):
+    admin_id=(os.getenv("ADMIN_TELEGRAM_ID","") or "").strip()
+    if not admin_id.isdigit() or cq.from_user.id != int(admin_id):
+        return await cq.answer("این گزینه فقط برای مدیر مرکز فعال است.",show_alert=True)
+    parts=(cq.data or "").split(":",1)
+    if len(parts)!=2 or not parts[1].isdigit():
+        return await cq.answer("شناسه دانش‌آموز معتبر نیست.",show_alert=True)
+    student_id=int(parts[1])
+    if not db.get_student_by_tg(student_id):
+        return await cq.answer("پرونده دانش‌آموز پیدا نشد.",show_alert=True)
+    await state.clear()
+    await state.update_data(reply_student_id=student_id)
+    await state.set_state(StaffReply.waiting_for_reply)
+    await cq.answer()
+    await cq.message.answer(
+        f"✉️ پاسخ مستقیم به دانش‌آموز <code>{student_id}</code>\n\n"
+        "متن پاسخ را در پیام بعدی بنویسید. برای لغو، /cancelreply را بفرستید."
+    )
+
+@dp.message(StaffReply.waiting_for_reply, F.text)
+async def send_staff_direct_reply(message:Message,state:FSMContext):
+    admin_id=(os.getenv("ADMIN_TELEGRAM_ID","") or "").strip()
+    if not admin_id.isdigit() or message.from_user.id != int(admin_id):
+        await state.clear()
+        return
+    if (message.text or "").strip()=="/cancelreply":
+        await state.clear()
+        return await message.answer("ارسال پاسخ لغو شد.")
+    data=await state.get_data()
+    student_id=data.get("reply_student_id")
+    if not student_id or not db.get_student_by_tg(int(student_id)):
+        await state.clear()
+        return await message.answer("پرونده دانش‌آموز پیدا نشد؛ پاسخ ارسال نشد.")
+    reply_text=(message.text or "").strip()[:3500]
+    if not reply_text:
+        return await message.answer("لطفاً متن پاسخ را وارد کنید.")
+    try:
+        await bot.send_message(int(student_id),"💬 <b>پاسخ مرکز ترنم همدلی</b>\\n\\n"+html.escape(reply_text))
+    except Exception as exc:
+        print(f"[HUMAN_CONTACT] direct reply delivery failed: {type(exc).__name__}: {exc}",flush=True)
+        await state.clear()
+        return await message.answer("ارسال پاسخ ناموفق بود. مطمئن شوید دانش‌آموز بات را Start کرده است.")
+    await state.clear()
+    await message.answer("✅ پاسخ از طریق بات برای دانش‌آموز ارسال شد.")
 
 @dp.message(F.text.startswith("/reply "))
 async def reply_to_student(message:Message):
@@ -1427,7 +1479,9 @@ async def notify_center_request(student, request_type: str, note: str = ""):
         + (f"📝 توضیح: {safe_note}\n" if safe_note else "")
         + "\nلطفاً درخواست را در CRM بررسی و برای تماس/پیگیری اقدام کنید."
     )
+    student_tg_id = int(_student_field(student, "telegram_id", 0) or 0)
     markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✉️ پاسخ مستقیم به دانش‌آموز", callback_data=f"staff_reply:{student_tg_id}")],
         [InlineKeyboardButton(text="🔐 ورود به پنل مشاور", url=portal_url)]
     ])
     delivered = 0
