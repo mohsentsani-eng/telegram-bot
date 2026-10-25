@@ -2155,7 +2155,7 @@ async def planner_counselor(cq:CallbackQuery):
     note="درخواست اصلاح و شخصی‌سازی برنامه مطالعه توسط مشاور مرکز ترنم همدلی"
     db.request_counseling(s["id"],"plan_review",note)
     await notify_center_request(s, "بازبینی برنامه مطالعه", note)
-    await cq.message.answer("✅ درخواست شما ثبت شد و در CRM ثبت شد تا مرکز آن را بررسی کند.\n\nمشاور می‌تواند برنامه را بر اساس شرایط واقعی، آزمون‌ها و روند مطالعه‌ات بازبینی کند.",reply_markup=main_menu())
+    await cq.message.answer("✅ درخواست شما در CRM ثبت شد تا مرکز آن را بررسی کند.\n\nمشاور می‌تواند برنامه را بر اساس شرایط واقعی، آزمون‌ها و روند مطالعه‌ات بازبینی کند.",reply_markup=main_menu())
 
 class QuickAssessment(StatesGroup):
     answering=State()
@@ -2446,12 +2446,12 @@ async def menu(message:Message,state:FSMContext):
         note="علاقه‌مند به کوچینگ"
         db.request_counseling(s["id"],"coaching",note)
         await notify_center_request(s, "کوچینگ تحصیلی", note)
-        return await message.answer("✅ درخواست کوچینگ ثبت شد و در CRM ثبت شد تا مرکز آن را بررسی کند.",reply_markup=main_menu())
+        return await message.answer("✅ درخواست کوچینگ در CRM ثبت شد تا مرکز آن را بررسی کند.",reply_markup=main_menu())
     if t=="👨‍👩‍👧 مشاوره والدین":
         note="درخواست مشاوره والدین"
         db.request_counseling(s["id"],"parents",note)
         await notify_center_request(s, "مشاوره والدین", note)
-        return await message.answer("✅ درخواست مشاوره والدین ثبت شد و در CRM ثبت شد تا مرکز آن را بررسی کند.",reply_markup=main_menu())
+        return await message.answer("✅ درخواست مشاوره والدین در CRM ثبت شد تا مرکز آن را بررسی کند.",reply_markup=main_menu())
     if t=="📞 درخواست مشاوره":
         note="درخواست عمومی"
         db.request_counseling(s["id"],"general",note)
