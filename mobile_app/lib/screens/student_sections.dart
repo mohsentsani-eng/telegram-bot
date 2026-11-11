@@ -94,3 +94,14 @@ class _OfflineNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(padding: const EdgeInsets.all(13), decoration: BoxDecoration(color: const Color(0xFFEAF6F0), borderRadius: BorderRadius.circular(14)), child: const Row(children: [Icon(Icons.cloud_done_outlined, color: AppColors.success), SizedBox(width: 8), Expanded(child: Text('اطلاعات ذخیره‌شده روی گوشی در دسترس است.', style: TextStyle(color: AppColors.success, fontSize: 11)))]));
 }
+
+class StudentProfileScreen extends StatelessWidget {
+  const StudentProfileScreen({super.key});
+  @override
+  Widget build(BuildContext context) => const _SimpleStudentPage(
+    title: 'حساب من',
+    subtitle: 'اطلاعات و تنظیمات حساب دانش‌آموز',
+    icon: Icons.person_rounded,
+    items: ['مشخصات دانش‌آموز','پایه و رشته تحصیلی','تنظیمات اعلان‌ها','حریم خصوصی و امنیت','راهنما و ارتباط با ترنم همدلی'],
+  );
+}
