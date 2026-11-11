@@ -966,8 +966,8 @@ async def reply_to_student(message:Message):
 
 @dp.callback_query(F.data.startswith("m_auth:"))
 async def approve_mobile_login(callback:CallbackQuery):
-    challenge_id=(callback.data or "").split(":",1)[1]
-    if approve_mobile_challenge(challenge_id,callback.from_user.id):
+    parts=(callback.data or "").split(":",2)
+    if len(parts) == 3 and approve_mobile_challenge(parts[1],parts[2],callback.from_user.id):
         await callback.answer("ورود تأیید شد",show_alert=True)
         try:
             await callback.message.edit_text("✅ ورود شما به اپلیکیشن ترنم همدلی تأیید شد. به اپ برگردید.")
@@ -991,7 +991,7 @@ async def start(message:Message,state:FSMContext):
                 await message.answer("برای ورود به اپ، ابتدا باید با همین حساب تلگرام در ربات ترنم همدلی پرونده دانش‌آموزی داشته باشید.")
                 return
             markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="✅ تأیید ورود به اپ",callback_data=f"m_auth:{challenge_id}")
+                InlineKeyboardButton(text="✅ تأیید ورود به اپ",callback_data=f"m_auth:{challenge_id}:{pieces[2]}")
             ]])
             await message.answer(
                 "درخواست ورود به اپلیکیشن ترنم همدلی ثبت شده است. اگر این درخواست را خودتان آغاز کرده‌اید، ورود را تأیید کنید.",
