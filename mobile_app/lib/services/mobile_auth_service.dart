@@ -7,11 +7,11 @@ import 'package:url_launcher/url_launcher.dart';
 class MobileAuthService {
   MobileAuthService({http.Client? client}) : _client = client ?? http.Client();
   static const String _baseUrl = String.fromEnvironment(
-    'API_BASE_URL', defaultValue: 'https://YOUR-RAILWAY-DOMAIN',
+    'API_BASE_URL', defaultValue: 'https://telegram-bot-production-5605.up.railway.app',
   );
   static const _storage = FlutterSecureStorage();
   final http.Client _client;
-  bool get isConfigured => !_baseUrl.contains('YOUR-RAILWAY-DOMAIN');
+  bool get isConfigured => _baseUrl.startsWith('https://');
 
   Future<void> clearSession() async {
     await _storage.delete(key: 'mobile_access_token');
@@ -73,9 +73,10 @@ class MobileAuthService {
     final expiry = DateTime.now().add(Duration(seconds: (challenge['expires_in'] as num).toInt()));
     while (DateTime.now().isBefore(expiry)) {
       await Future<void>.delayed(Duration(seconds: (challenge['poll_interval_seconds'] as num).toInt()));
-      final response = await _client.get(
-        Uri.parse('$_baseUrl/api/v1/mobile/auth/challenge/$challengeId')
-            .replace(queryParameters: {'secret': secret}),
+      final response = await _client.post(
+        Uri.parse('$_baseUrl/api/v1/mobile/auth/challenge/$challengeId'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'secret': secret}),
       );
       if (response.statusCode != 200) throw Exception('بررسی وضعیت ورود ناموفق بود.');
       final result = jsonDecode(response.body) as Map<String, dynamic>;
