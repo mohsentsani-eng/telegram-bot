@@ -46,7 +46,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               ),
             ],
           ),
-        ) : IndexedStack(index: _selectedIndex - 1, children: const [StudyPlanScreen(), TestsScreen(), DailyReportScreen(), WellbeingScreen()]),
+        ) : IndexedStack(index: _selectedIndex - 1, children: const [StudyPlanScreen(), TestsScreen(), DailyReportScreen(), StudentProfileScreen()]),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _selectedIndex,
           onDestinationSelected: (value) => setState(() => _selectedIndex = value),
