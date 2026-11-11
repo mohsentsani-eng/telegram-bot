@@ -12,44 +12,34 @@ class StudentHomeScreen extends StatefulWidget {
 class _StudentHomeScreenState extends State<StudentHomeScreen> {
   int _selectedIndex = 0;
 
+  void _goToTab(int index) => setState(() => _selectedIndex = index);
+
+  void _openWellbeing() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const WellbeingScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final pages = <Widget>[
+      _homePage(),
+      const StudyPlanScreen(),
+      const TestsScreen(),
+      const DailyReportScreen(),
+      const StudentProfileScreen(),
+    ];
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        body: _selectedIndex == 0 ? SafeArea(
-          child: CustomScrollView(
-            slivers: [
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate([
-                    _topBar(),
-                    const SizedBox(height: 22),
-                    _welcomeCard(),
-                    const SizedBox(height: 20),
-                    _sectionTitle('برنامه امروز', 'مشاهده برنامه', onTap: () {}),
-                    const SizedBox(height: 12),
-                    _todayTask(),
-                    const SizedBox(height: 22),
-                    _sectionTitle('دسترسی سریع', 'همه امکانات'),
-                    const SizedBox(height: 12),
-                    _quickActions(),
-                    const SizedBox(height: 22),
-                    _dailyProgress(),
-                    const SizedBox(height: 20),
-                    _counselorCard(),
-                    const SizedBox(height: 18),
-                    _syncStatus(),
-                  ]),
-                ),
-              ),
-            ],
-          ),
-        ) : IndexedStack(index: _selectedIndex - 1, children: const [StudyPlanScreen(), TestsScreen(), DailyReportScreen(), StudentProfileScreen()]),
+        body: IndexedStack(
+          index: _selectedIndex,
+          children: pages,
+        ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _selectedIndex,
-          onDestinationSelected: (value) => setState(() => _selectedIndex = value),
+          onDestinationSelected: _goToTab,
           destinations: const [
             NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'خانه'),
             NavigationDestination(icon: Icon(Icons.calendar_month_outlined), label: 'برنامه'),
@@ -62,14 +52,42 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     );
   }
 
+  Widget _homePage() => SafeArea(
+    child: CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate([
+              _topBar(),
+              const SizedBox(height: 22),
+              _welcomeCard(),
+              const SizedBox(height: 20),
+              _sectionTitle('برنامه امروز', 'مشاهده برنامه', onTap: () => _goToTab(1)),
+              const SizedBox(height: 12),
+              _todayTask(),
+              const SizedBox(height: 22),
+              _sectionTitle('دسترسی سریع', 'همه امکانات', onTap: () => _goToTab(1)),
+              const SizedBox(height: 12),
+              _quickActions(),
+              const SizedBox(height: 22),
+              _dailyProgress(),
+              const SizedBox(height: 20),
+              _counselorCard(),
+              const SizedBox(height: 18),
+              _syncStatus(),
+            ]),
+          ),
+        ),
+      ],
+    ),
+  );
+
   Widget _topBar() => Row(
     children: [
       Container(
         width: 44, height: 44,
-        decoration: BoxDecoration(
-          color: AppColors.sky,
-          borderRadius: BorderRadius.circular(14),
-        ),
+        decoration: BoxDecoration(color: AppColors.sky, borderRadius: BorderRadius.circular(14)),
         child: const Icon(Icons.spa_rounded, color: AppColors.primary, size: 25),
       ),
       const SizedBox(width: 10),
@@ -82,7 +100,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       ),
       const Spacer(),
       IconButton.filledTonal(
-        onPressed: () {},
+        onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('اعلان‌ها پس از اتصال حساب کاربری فعال می‌شوند.')),
+        ),
         style: IconButton.styleFrom(backgroundColor: Colors.white),
         icon: const Icon(Icons.notifications_none_rounded, color: AppColors.ink),
       ),
@@ -98,9 +118,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         end: Alignment.bottomLeft,
         colors: [AppColors.primary, AppColors.deepBlue],
       ),
-      boxShadow: [
-        BoxShadow(color: AppColors.primary.withValues(alpha: .16), blurRadius: 22, offset: const Offset(0, 10)),
-      ],
+      boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: .16), blurRadius: 22, offset: const Offset(0, 10))],
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -116,13 +134,17 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         const SizedBox(height: 8),
         const Text('قدم‌های کوچک امروز، پیشرفت‌های بزرگ فردا را می‌سازند.', style: TextStyle(color: Color(0xFFE5EEFF), fontSize: 13, height: 1.8)),
         const SizedBox(height: 18),
-        Row(children: [
-          const Icon(Icons.calendar_today_rounded, color: Colors.white70, size: 15),
-          const SizedBox(width: 7),
-          const Text('برای شروع، برنامه امروزت رو ببین', style: TextStyle(color: Colors.white, fontSize: 12)),
-          const Spacer(),
-          Icon(Icons.arrow_back_rounded, color: Colors.white.withValues(alpha: .9), size: 18),
-        ]),
+        InkWell(
+          onTap: () => _goToTab(1),
+          borderRadius: BorderRadius.circular(12),
+          child: Row(children: [
+            const Icon(Icons.calendar_today_rounded, color: Colors.white70, size: 15),
+            const SizedBox(width: 7),
+            const Text('برای شروع، برنامه امروزت رو ببین', style: TextStyle(color: Colors.white, fontSize: 12)),
+            const Spacer(),
+            Icon(Icons.arrow_back_rounded, color: Colors.white.withValues(alpha: .9), size: 18),
+          ]),
+        ),
       ],
     ),
   );
@@ -135,23 +157,27 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     ],
   );
 
-  Widget _todayTask() => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Row(children: [
-        Container(
-          width: 48, height: 48,
-          decoration: BoxDecoration(color: const Color(0xFFFFF5E5), borderRadius: BorderRadius.circular(15)),
-          child: const Icon(Icons.menu_book_rounded, color: Color(0xFFB7791F), size: 25),
-        ),
-        const SizedBox(width: 13),
-        const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('اولین قدم مطالعه', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.ink)),
-          SizedBox(height: 4),
-          Text('برنامه اختصاصی تو اینجا نمایش داده می‌شود', style: TextStyle(fontSize: 11, color: AppColors.muted)),
-        ])),
-        const Icon(Icons.chevron_left_rounded, color: AppColors.muted),
-      ]),
+  Widget _todayTask() => InkWell(
+    onTap: () => _goToTab(1),
+    borderRadius: BorderRadius.circular(20),
+    child: Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(children: [
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(color: const Color(0xFFFFF5E5), borderRadius: BorderRadius.circular(15)),
+            child: const Icon(Icons.menu_book_rounded, color: Color(0xFFB7791F), size: 25),
+          ),
+          const SizedBox(width: 13),
+          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('برنامه مطالعاتی', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.ink)),
+            SizedBox(height: 4),
+            Text('با ورود به برنامه، جزئیات فعالیت‌ها را ببین', style: TextStyle(fontSize: 11, color: AppColors.muted)),
+          ])),
+          const Icon(Icons.chevron_left_rounded, color: AppColors.muted),
+        ]),
+      ),
     ),
   );
 
@@ -162,11 +188,11 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     mainAxisSpacing: 11,
     crossAxisSpacing: 11,
     childAspectRatio: 1.8,
-    children: const [
-      _ActionTile(icon: Icons.calendar_month_rounded, title: 'برنامه مطالعاتی', subtitle: 'برنامه امروزت', tint: Color(0xFFEAF3FF), iconColor: AppColors.primary),
-      _ActionTile(icon: Icons.quiz_rounded, title: 'آزمون‌های من', subtitle: 'تمرین و ارزیابی', tint: Color(0xFFF1EDFF), iconColor: Color(0xFF7660B5)),
-      _ActionTile(icon: Icons.timer_rounded, title: 'ساعت مطالعه', subtitle: 'ثبت فعالیت روزانه', tint: Color(0xFFFFF5E5), iconColor: Color(0xFFB7791F)),
-      _ActionTile(icon: Icons.favorite_rounded, title: 'حال خوب من', subtitle: 'حال و انگیزه امروز', tint: Color(0xFFFFEDF0), iconColor: Color(0xFFC45B72)),
+    children: [
+      _ActionTile(icon: Icons.calendar_month_rounded, title: 'برنامه مطالعاتی', subtitle: 'برنامه امروزت', tint: AppColors.sky, iconColor: AppColors.primary, onTap: () => _goToTab(1)),
+      _ActionTile(icon: Icons.quiz_rounded, title: 'آزمون‌های من', subtitle: 'تمرین و ارزیابی', tint: const Color(0xFFF1EDFF), iconColor: const Color(0xFF7660B5), onTap: () => _goToTab(2)),
+      _ActionTile(icon: Icons.timer_rounded, title: 'گزارش روزانه', subtitle: 'ثبت فعالیت روزانه', tint: const Color(0xFFFFF5E5), iconColor: const Color(0xFFB7791F), onTap: () => _goToTab(3)),
+      _ActionTile(icon: Icons.favorite_rounded, title: 'حال خوب من', subtitle: 'حال و انگیزه امروز', tint: const Color(0xFFFFEDF0), iconColor: const Color(0xFFC45B72), onTap: _openWellbeing),
     ],
   );
 
@@ -183,7 +209,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           child: const LinearProgressIndicator(value: 0, minHeight: 9, backgroundColor: AppColors.sky, color: AppColors.primary),
         ),
         const SizedBox(height: 8),
-        const Text('بعد از دریافت برنامه، میزان پیشرفتت اینجا نمایش داده می‌شود.', style: TextStyle(fontSize: 10, color: AppColors.muted)),
+        const Text('پس از اتصال برنامه اختصاصی، میزان پیشرفتت اینجا نمایش داده می‌شود.', style: TextStyle(fontSize: 10, color: AppColors.muted)),
       ]),
     ),
   );
@@ -201,7 +227,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('همراهی مشاور', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.ink)),
           SizedBox(height: 4),
-          Text('هر زمان نیاز داشتی، می‌تونی پیام بدی.', style: TextStyle(fontSize: 11, color: AppColors.muted)),
+          Text('ارتباط مستقیم پس از ورود امن به حساب فعال می‌شود.', style: TextStyle(fontSize: 11, color: AppColors.muted)),
         ])),
         const Icon(Icons.arrow_back_ios_new_rounded, size: 15, color: AppColors.muted),
       ]),
@@ -210,44 +236,49 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 
   Widget _syncStatus() => Container(
     padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-    decoration: BoxDecoration(color: const Color(0xFFEAF6F0), borderRadius: BorderRadius.circular(13)),
+    decoration: BoxDecoration(color: AppColors.sky, borderRadius: BorderRadius.circular(13)),
     child: const Row(children: [
-      Icon(Icons.cloud_done_outlined, color: AppColors.success, size: 17),
+      Icon(Icons.cloud_off_outlined, color: AppColors.primary, size: 17),
       SizedBox(width: 8),
-      Expanded(child: Text('وضعیت همگام‌سازی پس از اتصال به حساب نمایش داده می‌شود.', style: TextStyle(fontSize: 10, color: AppColors.success))),
+      Expanded(child: Text('همگام‌سازی و ذخیره آفلاین هنوز در حال پیاده‌سازی است.', style: TextStyle(fontSize: 10, color: AppColors.deepBlue))),
     ]),
   );
 }
 
 class _ActionTile extends StatelessWidget {
-  const _ActionTile({required this.icon, required this.title, required this.subtitle, required this.tint, required this.iconColor});
+  const _ActionTile({required this.icon, required this.title, required this.subtitle, required this.tint, required this.iconColor, required this.onTap});
   final IconData icon;
   final String title;
   final String subtitle;
   final Color tint;
   final Color iconColor;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Row(children: [
-        Container(
-          width: 39, height: 39,
-          decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(13)),
-          child: Icon(icon, color: iconColor, size: 21),
-        ),
-        const SizedBox(width: 9),
-        Expanded(child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.ink)),
-            const SizedBox(height: 3),
-            Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9, color: AppColors.muted)),
-          ],
-        )),
-      ]),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(children: [
+          Container(
+            width: 39, height: 39,
+            decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(13)),
+            child: Icon(icon, color: iconColor, size: 21),
+          ),
+          const SizedBox(width: 9),
+          Expanded(child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.ink)),
+              const SizedBox(height: 3),
+              Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9, color: AppColors.muted)),
+            ],
+          )),
+        ]),
+      ),
     ),
   );
 }
