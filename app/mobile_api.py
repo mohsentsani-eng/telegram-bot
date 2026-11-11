@@ -7,7 +7,7 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 
 from . import db
@@ -142,14 +142,43 @@ def poll_auth_challenge(challenge_id: str, secret: str):
     if not student:
         c.close()
         raise HTTPException(status_code=403, detail="registered_student_required")
-    tokens = _new_session(c, int(row["telegram_id"]))
-    c.execute(
-        "UPDATE mobile_auth_challenges SET consumed_at=? WHERE challenge_id=? AND consumed_at IS NULL",
+    consumed = c.execute(
+        """UPDATE mobile_auth_challenges SET consumed_at=?
+           WHERE challenge_id=? AND status='approved' AND consumed_at IS NULL""",
         (_utcnow().isoformat(), challenge_id),
     )
+    if consumed.rowcount != 1:
+        c.commit()
+        c.close()
+        return {"status": "consumed"}
+    tokens = _new_session(c, int(row["telegram_id"]))
     c.commit()
     c.close()
     return {"status": "authenticated", "role": "student", **tokens}
+
+
+@router.get("/auth/me")
+def mobile_identity(authorization: str | None = Header(default=None)):
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(status_code=401, detail="missing_access_token")
+    c = db.conn()
+    row = c.execute(
+        """SELECT telegram_id,access_expires_at FROM mobile_sessions
+           WHERE access_token_hash=? AND revoked_at IS NULL""",
+        (_hash(token),),
+    ).fetchone()
+    if not row or row["access_expires_at"] <= _utcnow().isoformat():
+        c.close()
+        raise HTTPException(status_code=401, detail="invalid_or_expired_access_token")
+    student = c.execute(
+        "SELECT id FROM students WHERE telegram_id=? AND registered=1",
+        (row["telegram_id"],),
+    ).fetchone()
+    c.close()
+    if not student:
+        raise HTTPException(status_code=401, detail="account_unavailable")
+    return {"authenticated": True, "role": "student"}
 
 
 @router.post("/auth/refresh")
