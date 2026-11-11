@@ -53,7 +53,7 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(height: 34),
             Card(child: Padding(padding: const EdgeInsets.all(20),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                const Icon(Icons.telegram_rounded, size: 42, color: AppColors.primary),
+                const Icon(Icons.send_rounded, size: 42, color: AppColors.primary),
                 const SizedBox(height: 14),
                 const Text('ورود با حساب تلگرام', textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.ink)),
