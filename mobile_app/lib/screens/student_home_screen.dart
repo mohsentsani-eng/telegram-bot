@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'student_sections.dart';
 
 class StudentHomeScreen extends StatefulWidget {
   const StudentHomeScreen({super.key});
@@ -16,7 +17,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        body: SafeArea(
+        body: _selectedIndex == 0 ? SafeArea(
           child: CustomScrollView(
             slivers: [
               SliverPadding(
@@ -45,7 +46,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               ),
             ],
           ),
-        ),
+        ) : IndexedStack(index: _selectedIndex - 1, children: const [StudyPlanScreen(), TestsScreen(), DailyReportScreen(), WellbeingScreen()]),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _selectedIndex,
           onDestinationSelected: (value) => setState(() => _selectedIndex = value),
