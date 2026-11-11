@@ -12,6 +12,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from . import db
 from . import ai
 from . import psych_access
+from .mobile_api import approve_mobile_challenge
 
 TOKEN=os.getenv("BOT_TOKEN")
 CHANNEL_ID=os.getenv("REQUIRED_CHANNEL_ID","@tarnoomhamdeli").strip() or "@tarnoomhamdeli"
@@ -963,10 +964,42 @@ async def reply_to_student(message:Message):
         return await message.answer("ارسال پاسخ ناموفق بود. مطمئن شوید دانش‌آموز بات را Start کرده است.")
     await message.answer("✅ پاسخ از طریق بات ارسال شد.")
 
+@dp.callback_query(F.data.startswith("m_auth:"))
+async def approve_mobile_login(callback:CallbackQuery):
+    challenge_id=(callback.data or "").split(":",1)[1]
+    if approve_mobile_challenge(challenge_id,callback.from_user.id):
+        await callback.answer("ورود تأیید شد",show_alert=True)
+        try:
+            await callback.message.edit_text("✅ ورود شما به اپلیکیشن ترنم همدلی تأیید شد. به اپ برگردید.")
+        except Exception:
+            pass
+    else:
+        await callback.answer("درخواست منقضی شده یا معتبر نیست. از اپ دوباره تلاش کنید.",show_alert=True)
+
+
 @dp.message(CommandStart())
 async def start(message:Message,state:FSMContext):
     parts=(message.text or "").split(maxsplit=1)
     referral=(parts[1].strip() if len(parts)>1 else "")[:64]
+    # Mobile login is approved only after an explicit tap inside the official bot.
+    if referral.startswith("mobile_"):
+        pieces=referral.split("_",2)
+        if len(pieces)==3 and len(pieces[1])==12 and len(pieces[2])==32:
+            challenge_id=pieces[1]
+            existing=db.get_student_by_tg(message.from_user.id)
+            if not existing or not existing["registered"]:
+                await message.answer("برای ورود به اپ، ابتدا باید با همین حساب تلگرام در ربات ترنم همدلی پرونده دانش‌آموزی داشته باشید.")
+                return
+            markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="✅ تأیید ورود به اپ",callback_data=f"m_auth:{challenge_id}")
+            ]])
+            await message.answer(
+                "درخواست ورود به اپلیکیشن ترنم همدلی ثبت شده است. اگر این درخواست را خودتان آغاز کرده‌اید، ورود را تأیید کنید.",
+                reply_markup=markup,
+            )
+            return
+        await message.answer("پیوند ورود معتبر نیست یا ناقص است. از داخل اپ دوباره درخواست ورود بدهید.")
+        return
     existing=db.get_student_by_tg(message.from_user.id)
     db.track_referral_event(message.from_user.id,"start",referral or "",existing["id"] if existing else None,{"start_parameter":referral})
     s=existing
