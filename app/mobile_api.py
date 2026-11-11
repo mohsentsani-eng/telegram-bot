@@ -35,6 +35,10 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class ChallengePollRequest(BaseModel):
+    secret: str
+
+
 def _new_session(c, telegram_id: int):
     access = secrets.token_urlsafe(32)
     refresh = secrets.token_urlsafe(48)
@@ -109,8 +113,9 @@ def create_auth_challenge(payload: ChallengeRequest):
     }
 
 
-@router.get("/auth/challenge/{challenge_id}")
-def poll_auth_challenge(challenge_id: str, secret: str):
+@router.post("/auth/challenge/{challenge_id}")
+def poll_auth_challenge(challenge_id: str, payload: ChallengePollRequest):
+    secret = payload.secret
     c = db.conn()
     row = c.execute(
         "SELECT * FROM mobile_auth_challenges WHERE challenge_id=?",
