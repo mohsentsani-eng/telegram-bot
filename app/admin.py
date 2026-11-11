@@ -13,6 +13,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import db
 from . import psych_access
 from .counselor_portal import router as counselor_router, _hash_password
+from .mobile_api import router as mobile_router
 
 
 app = FastAPI(title="Taranom Hamdeli Admin")
@@ -22,6 +23,7 @@ app.add_middleware(
 )
 
 app.include_router(counselor_router)
+app.include_router(mobile_router)
 
 
 def esc(x):
