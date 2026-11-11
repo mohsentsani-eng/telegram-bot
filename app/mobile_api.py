@@ -208,8 +208,16 @@ def refresh_session(payload: RefreshRequest):
         c.commit()
         c.close()
         raise HTTPException(status_code=401, detail="account_unavailable")
-    c.execute("UPDATE mobile_sessions SET revoked_at=? WHERE id=?",
-              (_utcnow().isoformat(), row["id"]))
+    # Rotate the refresh token atomically. If another request already used it,
+    # do not create a second session from the same token.
+    revoked = c.execute(
+        """UPDATE mobile_sessions SET revoked_at=?
+           WHERE id=? AND refresh_token_hash=? AND revoked_at IS NULL""",
+        (_utcnow().isoformat(), row["id"], token_hash),
+    )
+    if revoked.rowcount != 1:
+        c.close()
+        raise HTTPException(status_code=401, detail="invalid_refresh_token")
     tokens = _new_session(c, int(row["telegram_id"]))
     c.commit()
     c.close()
