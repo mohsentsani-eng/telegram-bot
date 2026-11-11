@@ -36,7 +36,7 @@ abstract final class AppTheme {
         bodyMedium: TextStyle(fontSize: 13, color: AppColors.muted, height: 1.7),
         labelLarge: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: Colors.white,
         elevation: 0,
         margin: EdgeInsets.zero,
