@@ -18,6 +18,37 @@ class MobileAuthService {
     await _storage.delete(key: 'mobile_refresh_token');
   }
 
+  Future<bool> restoreSession() async {
+    if (!isConfigured) return false;
+    final refresh = await _storage.read(key: 'mobile_refresh_token');
+    if (refresh == null) return false;
+    try {
+      final response = await _client.post(
+        Uri.parse('$_baseUrl/api/v1/mobile/auth/refresh'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': refresh}),
+      );
+      if (response.statusCode != 200) {
+        await clearSession();
+        return false;
+      }
+      final tokens = jsonDecode(response.body) as Map<String, dynamic>;
+      await _storage.write(key: 'mobile_access_token', value: tokens['access_token'] as String);
+      await _storage.write(key: 'mobile_refresh_token', value: tokens['refresh_token'] as String);
+      final identity = await _client.get(
+        Uri.parse('$_baseUrl/api/v1/mobile/auth/me'),
+        headers: {'Authorization': 'Bearer ${tokens['access_token']}'} ,
+      );
+      if (identity.statusCode != 200) {
+        await clearSession();
+        return false;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> loginWithTelegram({required void Function(String) onStatus}) async {
     if (!isConfigured) throw Exception('نشانی امن سرور هنوز در نسخه آزمایشی تنظیم نشده است.');
     onStatus('در حال ساخت درخواست ورود امن...');
