@@ -211,18 +211,18 @@ def refresh_session(payload: RefreshRequest):
     return {"role": "student", **tokens}
 
 
-def approve_mobile_challenge(challenge_id: str, telegram_id: int) -> bool:
+def approve_mobile_challenge(challenge_id: str, secret: str, telegram_id: int) -> bool:
     """Approve a valid challenge only for an existing registered student."""
     student = db.get_student_by_tg(int(telegram_id))
     if not student or not student["registered"]:
         return False
     c = db.conn()
     row = c.execute(
-        """SELECT challenge_id FROM mobile_auth_challenges
+        """SELECT secret_hash FROM mobile_auth_challenges
            WHERE challenge_id=? AND status='pending' AND expires_at>?""",
         (challenge_id, _utcnow().isoformat()),
     ).fetchone()
-    if not row:
+    if not row or not secrets.compare_digest(row["secret_hash"], _hash(secret)):
         c.close()
         return False
     cur = c.execute(
