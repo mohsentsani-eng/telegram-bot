@@ -1,82 +1,177 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-/// Isolated preview: no authentication, student IDs, API calls, or uploads.
 class ApexDemoScreen extends StatefulWidget {
   const ApexDemoScreen({super.key});
   @override
   State<ApexDemoScreen> createState() => _ApexDemoScreenState();
 }
-
 class _ApexDemoScreenState extends State<ApexDemoScreen> {
-  int tab = 0;
-  final subject = TextEditingController();
-  final List<String> activities = [];
-  int minutes = 45;
+  static const storageKey = 'apex360_offline_v1';
+  final taskController = TextEditingController();
+  final subjectController = TextEditingController();
+  int tab = 0, minutes = 45, tests = 0, satisfaction = 7, mood = 3, stress = 3;
+  bool ready = false;
+  List<Map<String, dynamic>> tasks = [], reports = [];
+  String get today => DateTime.now().toIso8601String().substring(0, 10);
 
   @override
-  void dispose() {
-    subject.dispose();
-    super.dispose();
+  void initState() { super.initState(); load(); }
+  Future<void> load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(storageKey);
+      if (raw != null) {
+        final data = jsonDecode(raw) as Map<String, dynamic>;
+        tasks = (data['tasks'] as List<dynamic>).map((v) => Map<String, dynamic>.from(v as Map)).toList();
+        reports = (data['reports'] as List<dynamic>).map((v) => Map<String, dynamic>.from(v as Map)).toList();
+      }
+      if (mounted) setState(() => ready = true);
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('خواندن داده‌ها ممکن نشد. برای حفاظت از اطلاعات، ثبت غیرفعال است.')));
+    }
   }
-
+  Future<void> save() async {
+    final prefs = await SharedPreferences.getInstance();
+    final success = await prefs.setString(storageKey, jsonEncode({'tasks': tasks, 'reports': reports}));
+    if (!success && mounted) ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('ذخیره اطلاعات ناموفق بود.')));
+  }
+  Future<void> addTask() async {
+    final name = taskController.text.trim();
+    if (name.isEmpty) return;
+    setState(() => tasks.insert(0, {'title': name, 'date': today, 'done': false}));
+    taskController.clear();
+    await save();
+  }
+  Future<void> addReport() async {
+    final name = subjectController.text.trim();
+    if (name.isEmpty) return;
+    setState(() => reports.insert(0, {'subject': name, 'date': today,
+      'minutes': minutes, 'tests': tests, 'satisfaction': satisfaction,
+      'mood': mood, 'stress': stress}));
+    subjectController.clear();
+    await save();
+  }
   @override
-  Widget build(BuildContext context) => Directionality(
-    textDirection: TextDirection.rtl,
+  void dispose() { taskController.dispose(); subjectController.dispose(); super.dispose(); }
+  Widget heading(String label) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Text(label, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)));
+
+  Widget home() {
+    final current = tasks.where((t) => t['date'] == today).toList();
+    final done = current.where((t) => t['done'] == true).length;
+    final currentReports = reports.where((r) => r['date'] == today).toList();
+    final total = currentReports.fold<int>(0, (sum, r) => sum + (r['minutes'] as int));
+    final count = currentReports.fold<int>(0, (sum, r) => sum + (r['tests'] as int));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      heading('سلام! امروز چه قدمی برای پیشرفتت برداشتی؟ 🌱'),
+      Card(child: ListTile(title: const Text('اجرای برنامه امروز'),
+        subtitle: LinearProgressIndicator(value: current.isEmpty ? 0 : done / current.length),
+        trailing: Text(done.toString() + ' از ' + current.length.toString()))),
+      Card(child: ListTile(title: const Text('مطالعه امروز'), trailing: Text(total.toString() + ' دقیقه'))),
+      Card(child: ListTile(title: const Text('تست‌های امروز'), trailing: Text(count.toString() + ' تست'))),
+      FilledButton(onPressed: () => setState(() => tab = 1), child: const Text('برنامه‌ریزی امروز')),
+      OutlinedButton(onPressed: () => setState(() => tab = 3), child: const Text('ثبت گزارش مطالعه')),
+    ]);
+  }
+  Widget plan() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    heading('برنامه مطالعاتی روزانه'),
+    TextField(controller: taskController, maxLength: 100,
+      decoration: const InputDecoration(labelText: 'درس یا تکلیف', hintText: 'مثلاً مرور زیست')),
+    FilledButton(onPressed: addTask, child: const Text('افزودن به برنامه امروز')),
+    if (tasks.isEmpty) const Text('هنوز تکلیفی ثبت نشده است.'),
+    ...tasks.asMap().entries.map((entry) => Card(child: CheckboxListTile(
+      title: Text(entry.value['title'] as String),
+      subtitle: Text(entry.value['date'] as String),
+      value: entry.value['done'] == true,
+      onChanged: (value) async {
+        setState(() => tasks[entry.key]['done'] = value ?? false);
+        await save();
+      }))),
+  ]);
+  Widget report() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    heading('ثبت گزارش روزانه'),
+    TextField(controller: subjectController, maxLength: 80,
+      decoration: const InputDecoration(labelText: 'نام درس')),
+    Text('مدت مطالعه: ' + minutes.toString() + ' دقیقه'),
+    Slider(value: minutes.toDouble(), min: 15, max: 180, divisions: 11,
+      onChanged: (value) => setState(() => minutes = value.round())),
+    Text('تعداد تست: ' + tests.toString()),
+    Slider(value: tests.toDouble(), min: 0, max: 100, divisions: 100,
+      onChanged: (value) => setState(() => tests = value.round())),
+    Text('رضایت از عملکرد: ' + satisfaction.toString() + ' از ۱۰'),
+    Slider(value: satisfaction.toDouble(), min: 0, max: 10, divisions: 10,
+      onChanged: (value) => setState(() => satisfaction = value.round())),
+    Text('خلق امروز: ' + mood.toString() + ' از ۵'),
+    Slider(value: mood.toDouble(), min: 1, max: 5, divisions: 4,
+      onChanged: (value) => setState(() => mood = value.round())),
+    Text('استرس امروز: ' + stress.toString() + ' از ۵'),
+    Slider(value: stress.toDouble(), min: 1, max: 5, divisions: 4,
+      onChanged: (value) => setState(() => stress = value.round())),
+    FilledButton(onPressed: addReport, child: const Text('ذخیره گزارش روی گوشی')),
+    const SizedBox(height: 16),
+    heading('گزارش‌های ثبت‌شده'),
+    ...reports.take(30).map((r) => Card(child: ListTile(
+      title: Text(r['subject'].toString() + ' • ' + r['minutes'].toString() + ' دقیقه • ' + r['tests'].toString() + ' تست'),
+      subtitle: Text(r['date'].toString() + ' | رضایت ' + r['satisfaction'].toString() + '/۱۰ | خلق ' + r['mood'].toString() + '/۵ | استرس ' + r['stress'].toString() + '/۵')))),
+  ]);
+  Widget progress() {
+    final now = DateTime.now();
+    final days = List.generate(7, (i) {
+      final date = now.subtract(Duration(days: 6 - i)).toIso8601String().substring(0, 10);
+      final sum = reports.where((r) => r['date'] == date).fold<int>(0, (n, r) => n + (r['minutes'] as int));
+      return (date: date, sum: sum);
+    });
+    final total = days.fold<int>(0, (n, d) => n + d.sum);
+    final maximum = days.fold<int>(60, (n, d) => d.sum > n ? d.sum : n);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      heading('پیشرفت هفت روز گذشته'),
+      Card(child: ListTile(title: const Text('مجموع مطالعه هفتگی'),
+        trailing: Text((total / 60).toStringAsFixed(1) + ' ساعت'))),
+      ...days.map((d) => Padding(padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(children: [
+          SizedBox(width: 60, child: Text(d.date.substring(5))),
+          Expanded(child: LinearProgressIndicator(value: d.sum / maximum, minHeight: 12)),
+          SizedBox(width: 75, child: Text(d.sum.toString() + ' دقیقه')),
+        ]))),
+    ]);
+  }
+  Widget account() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    heading('حساب محلی'),
+    const Card(child: ListTile(title: Text('Apex360 ترنم همدلی'),
+      subtitle: Text('حساب آزمایشی؛ بدون اتصال به پرونده دانش‌آموز'))),
+    Card(child: ListTile(title: const Text('تکالیف ذخیره‌شده'), trailing: Text(tasks.length.toString()))),
+    Card(child: ListTile(title: const Text('گزارش‌های ذخیره‌شده'), trailing: Text(reports.length.toString()))),
+  ]);
+  @override
+  Widget build(BuildContext context) => Directionality(textDirection: TextDirection.rtl,
     child: Scaffold(
       appBar: AppBar(title: const Text('Apex360 | ترنم همدلی')),
-      body: SafeArea(child: ListView(padding: const EdgeInsets.all(18), children: [
-        Container(padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: AppColors.sky, borderRadius: BorderRadius.circular(14)),
-          child: const Text('حالت نمایشی آفلاین • بدون اتصال به سرور و بدون پرونده واقعی دانش‌آموز. اطلاعات این صفحه فقط تا زمان بسته‌شدن برنامه نگهداری می‌شود.',
-            style: TextStyle(fontSize: 12, height: 1.8))),
-        const SizedBox(height: 16),
-        if (tab == 0) ...[
-          const Text('سلام! به مسیر پیشرفتت خوش آمدی 🌱', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-          const Card(child: ListTile(title: Text('برنامه امروز'), subtitle: Text('برای مشاهده برنامه نمونه، بخش برنامه را انتخاب کن.'), leading: Icon(Icons.calendar_month))),
-          Card(child: ListTile(title: const Text('گزارش فعالیت‌ها'), subtitle: Text('${activities.length} فعالیت نمایشی ثبت شده'), leading: const Icon(Icons.insights))),
-          const Card(child: ListTile(title: Text('همراهی مشاور'), subtitle: Text('در نسخه نمایشی غیرفعال است.'), leading: Icon(Icons.support_agent))),
-        ],
-        if (tab == 1) ...[
-          const Text('برنامه مطالعاتی نمونه', style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
-          for (final task in ['ریاضی • مرور ۳۰ دقیقه', 'زیست • مطالعه ۴۵ دقیقه', 'فارسی • تمرین ۲۰ دقیقه'])
-            Card(child: ListTile(title: Text(task), leading: const Icon(Icons.check_circle_outline))),
-        ],
-        if (tab == 2) ...[
-          const Text('آزمون‌های نمونه', style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
-          const Card(child: ListTile(title: Text('آزمون تمرینی ریاضی'), subtitle: Text('فقط نمایش؛ آزمون واقعی هنوز فعال نیست'))),
-          const Card(child: ListTile(title: Text('مهارت‌های یادگیری'), subtitle: Text('فقط نمایش؛ نتیجه‌ای ذخیره نمی‌شود'))),
-        ],
-        if (tab == 3) ...[
-          const Text('ثبت فعالیت نمایشی', style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
-          TextField(controller: subject, decoration: const InputDecoration(labelText: 'نام درس')),
-          const SizedBox(height: 14),
-          Text('مدت مطالعه: $minutes دقیقه'),
-          Slider(value: minutes.toDouble(), min: 15, max: 180, divisions: 11,
-            onChanged: (v) => setState(() => minutes = v.round())),
-          FilledButton(onPressed: () {
-            if (subject.text.trim().isEmpty) return;
-            setState(() => activities.insert(0, '${subject.text.trim()} • $minutes دقیقه'));
-            subject.clear();
-          }, child: const Text('ثبت آزمایشی (فقط در حافظه موقت)')),
-          for (final item in activities) Card(child: ListTile(title: Text(item))),
-        ],
-        if (tab == 4) ...[
-          const Text('حساب نمایشی', style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
-          const Card(child: ListTile(title: Text('دانش‌آموز نمونه'), subtitle: Text('هیچ اطلاعات واقعی دریافت نشده است'))),
-          const Card(child: ListTile(title: Text('اتصال به تلگرام'), subtitle: Text('در حالت نمایشی غیرفعال است'))),
-        ],
-      ])),
+      body: !ready ? const Center(child: CircularProgressIndicator()) :
+        SafeArea(child: ListView(padding: const EdgeInsets.all(18), children: [
+          Container(padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: const Color(0xFFE8F0FF), borderRadius: BorderRadius.circular(14)),
+            child: const Text('نسخه آفلاین آزمایشی • داده‌ها فقط روی گوشی ذخیره می‌شوند و به ربات یا مشاور ارسال نمی‌شوند. حذف برنامه ممکن است اطلاعات را پاک کند.',
+              style: TextStyle(fontSize: 12, height: 1.8))),
+          const SizedBox(height: 18),
+          if (tab == 0) home(),
+          if (tab == 1) plan(),
+          if (tab == 2) progress(),
+          if (tab == 3) report(),
+          if (tab == 4) account(),
+        ])),
       bottomNavigationBar: NavigationBar(selectedIndex: tab,
-        onDestinationSelected: (value) => setState(() => tab = value),
+        onDestinationSelected: (v) => setState(() => tab = v),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home_outlined), label: 'خانه'),
           NavigationDestination(icon: Icon(Icons.calendar_month_outlined), label: 'برنامه'),
-          NavigationDestination(icon: Icon(Icons.quiz_outlined), label: 'آزمون'),
-          NavigationDestination(icon: Icon(Icons.insights_outlined), label: 'گزارش'),
+          NavigationDestination(icon: Icon(Icons.bar_chart_outlined), label: 'پیشرفت'),
+          NavigationDestination(icon: Icon(Icons.edit_note_outlined), label: 'گزارش'),
           NavigationDestination(icon: Icon(Icons.person_outline), label: 'حساب'),
         ]),
-    ),
-  );
+    ));
 }
