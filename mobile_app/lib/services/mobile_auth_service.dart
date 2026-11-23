@@ -34,6 +34,8 @@ class MobileAuthService {
           body: jsonEncode({'refresh_token': refresh}),
         ).timeout(const Duration(seconds: 8));
       }
+    } catch (_) {
+      // Local logout must work offline. The server token expires on its own.
     } finally {
       await clearSession();
     }
