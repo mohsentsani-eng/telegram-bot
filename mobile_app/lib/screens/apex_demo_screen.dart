@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Offline-only workspace; does not contact the production bot or API.
 class ApexDemoScreen extends StatefulWidget {
   const ApexDemoScreen({super.key});
   @override
