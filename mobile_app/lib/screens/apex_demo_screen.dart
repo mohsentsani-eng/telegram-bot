@@ -15,6 +15,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   final topicController = TextEditingController();
   final noteController = TextEditingController();
   int plannedMinutes = 60, priority = 2;
+  int? linkedTaskIndex;
   DateTime selectedDate = DateTime.now();
   String get selectedDay => selectedDate.toIso8601String().substring(0, 10);
   int tab = 0, minutes = 45, tests = 0, satisfaction = 7, mood = 3, stress = 3;
@@ -56,11 +57,12 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   Future<void> addReport() async {
     final name = subjectController.text.trim();
     if (name.isEmpty) return;
-    setState(() => reports.insert(0, {'subject': name, 'date': today,
+    setState(() => reports.insert(0, {'subject': name, 'date': today, 'taskIndex': linkedTaskIndex,
       'minutes': minutes, 'tests': tests, 'satisfaction': satisfaction,
       'mood': mood, 'stress': stress, 'note': noteController.text.trim()}));
     subjectController.clear();
     noteController.clear();
+    setState(() => linkedTaskIndex = null);
     await save();
   }
   @override
@@ -98,7 +100,13 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       if (picked != null) setState(() => selectedDate = picked);
     }, icon: const Icon(Icons.event), label: Text('تاریخ برنامه: ' + selectedDay)),
     Text('زمان پیش‌بینی‌شده: ' + plannedMinutes.toString() + ' دقیقه'),
-    Slider(value: plannedMinutes.toDouble(), min: 15, max: 240, divisions: 15,
+    Row(children: [const Text('ورود دقیق (دقیقه): '),
+      Expanded(child: TextFormField(initialValue: plannedMinutes.toString(),
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(hintText: 'دقیقه'),
+        onChanged: (v) { final n = int.tryParse(v); if (n != null && n >= 0 && n <= 600) setState(() => plannedMinutes = n); },
+      ))]),
+    Slider(value: plannedMinutes.clamp(0, 240).toDouble(), min: 0, max: 240, divisions: 16,
       onChanged: (v) => setState(() => plannedMinutes = v.round())),
     Text('اولویت: ' + (priority == 1 ? 'زیاد' : priority == 2 ? 'متوسط' : 'کم')),
     SegmentedButton<int>(segments: const [
@@ -121,10 +129,28 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   ]);
   Widget report() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     heading('ثبت گزارش روزانه'),
+    if (tasks.isNotEmpty) DropdownButtonFormField<int>(
+      isExpanded: true,
+      initialValue: linkedTaskIndex,
+      decoration: const InputDecoration(labelText: 'اتصال گزارش به تکلیف برنامه'),
+      items: [const DropdownMenuItem<int>(value: -1, child: Text('بدون اتصال')),
+        ...tasks.asMap().entries.map((e) => DropdownMenuItem<int>(value: e.key,
+          child: Text(e.value['title'].toString() + ' • ' + e.value['date'].toString(), overflow: TextOverflow.ellipsis)))],
+      onChanged: (v) => setState(() {
+        linkedTaskIndex = v == -1 ? null : v;
+        if (linkedTaskIndex != null) subjectController.text = tasks[linkedTaskIndex!]['title'].toString();
+      }),
+    ),
     TextField(controller: subjectController, maxLength: 80,
       decoration: const InputDecoration(labelText: 'نام درس')),
     Text('مدت مطالعه: ' + minutes.toString() + ' دقیقه'),
-    Slider(value: minutes.toDouble(), min: 15, max: 180, divisions: 11,
+    Row(children: [const Text('ورود دقیق (دقیقه): '),
+      Expanded(child: TextFormField(initialValue: minutes.toString(),
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(hintText: 'دقیقه'),
+        onChanged: (v) { final n = int.tryParse(v); if (n != null && n >= 0 && n <= 600) setState(() => minutes = n); },
+      ))]),
+    Slider(value: minutes.clamp(0, 180).toDouble(), min: 0, max: 180, divisions: 12,
       onChanged: (value) => setState(() => minutes = value.round())),
     Text('تعداد تست: ' + tests.toString()),
     Slider(value: tests.toDouble(), min: 0, max: 100, divisions: 100,
