@@ -152,8 +152,8 @@ def poll_auth_challenge(challenge_id: str, payload: ChallengePollRequest):
         raise HTTPException(status_code=403, detail="registered_student_required")
     consumed = c.execute(
         """UPDATE mobile_auth_challenges SET consumed_at=?
-           WHERE challenge_id=? AND status='approved' AND consumed_at IS NULL""",
-        (_utcnow().isoformat(), challenge_id),
+           WHERE challenge_id=? AND status='approved' AND consumed_at IS NULL AND expires_at>?""",
+        (_utcnow().isoformat(), challenge_id, _utcnow().isoformat()),
     )
     if consumed.rowcount != 1:
         c.commit()
@@ -284,8 +284,8 @@ def approve_mobile_challenge(challenge_id: str, secret: str, telegram_id: int) -
     cur = c.execute(
         """UPDATE mobile_auth_challenges
            SET status='approved',telegram_id=?,approved_at=?
-           WHERE challenge_id=? AND status='pending'""",
-        (int(telegram_id), _utcnow().isoformat(), challenge_id),
+           WHERE challenge_id=? AND status='pending' AND expires_at>?""",
+        (int(telegram_id), _utcnow().isoformat(), challenge_id, _utcnow().isoformat()),
     )
     c.commit()
     ok = cur.rowcount == 1
