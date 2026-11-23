@@ -162,6 +162,46 @@ def poll_auth_challenge(challenge_id: str, payload: ChallengePollRequest):
     return {"status": "authenticated", "role": "student", **tokens}
 
 
+def _authenticated_student(authorization: str | None):
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(status_code=401, detail="missing_access_token")
+    c = db.conn()
+    try:
+        row = c.execute(
+            """SELECT telegram_id FROM mobile_sessions
+               WHERE access_token_hash=? AND revoked_at IS NULL
+               AND access_expires_at>?""",
+            (_hash(token), _utcnow().isoformat()),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=401, detail="invalid_or_expired_access_token")
+        student = c.execute(
+            """SELECT id,first_name,last_name,grade,track,city
+               FROM students WHERE telegram_id=? AND registered=1""",
+            (row["telegram_id"],),
+        ).fetchone()
+        if not student:
+            raise HTTPException(status_code=401, detail="account_unavailable")
+        return dict(student)
+    finally:
+        c.close()
+
+
+@router.get("/student/profile")
+def mobile_student_profile(authorization: str | None = Header(default=None)):
+    """Return only the authenticated student's minimal profile; no contact details."""
+    student = _authenticated_student(authorization)
+    return {
+        "student_id": student["id"],
+        "first_name": student["first_name"],
+        "last_name": student["last_name"],
+        "grade": student["grade"],
+        "track": student["track"],
+        "city": student["city"],
+    }
+
+
 @router.get("/auth/me")
 def mobile_identity(authorization: str | None = Header(default=None)):
     scheme, _, token = (authorization or "").partition(" ")
