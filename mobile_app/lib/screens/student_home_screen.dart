@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import '../services/mobile_auth_service.dart';
 import '../theme/app_theme.dart';
 import 'student_sections.dart';
 
 class StudentHomeScreen extends StatefulWidget {
-  const StudentHomeScreen({super.key});
+  const StudentHomeScreen({super.key, required this.onLoggedOut});
+  final VoidCallback onLoggedOut;
 
   @override
   State<StudentHomeScreen> createState() => _StudentHomeScreenState();
@@ -11,6 +13,25 @@ class StudentHomeScreen extends StatefulWidget {
 
 class _StudentHomeScreenState extends State<StudentHomeScreen> {
   int _selectedIndex = 0;
+  bool _loggingOut = false;
+
+  Future<void> _logout() async {
+    if (_loggingOut) return;
+    setState(() => _loggingOut = true);
+    try {
+      await MobileAuthService().logout();
+      if (mounted) widget.onLoggedOut();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('خروج امن کامل نشد. اتصال اینترنت را بررسی و دوباره تلاش کنید.'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _loggingOut = false);
+    }
+  }
+
 
   void _goToTab(int index) => setState(() => _selectedIndex = index);
 
@@ -99,6 +120,11 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         ],
       ),
       const Spacer(),
+      IconButton(
+        tooltip: 'خروج از حساب',
+        onPressed: _loggingOut ? null : _logout,
+        icon: const Icon(Icons.logout_rounded, color: AppColors.muted),
+      ),
       IconButton.filledTonal(
         onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('اعلان‌ها پس از اتصال حساب کاربری فعال می‌شوند.')),
