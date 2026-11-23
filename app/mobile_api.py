@@ -124,15 +124,18 @@ def poll_auth_challenge(challenge_id: str, payload: ChallengePollRequest):
     if not row or not secrets.compare_digest(row["secret_hash"], _hash(secret)):
         c.close()
         raise HTTPException(status_code=404, detail="challenge_not_found")
-    if row["status"] == "pending" and row["expires_at"] <= _utcnow().isoformat():
+    # Expiration applies to approved but not yet consumed challenges too.
+    # A late poll must never mint tokens after the five-minute window.
+    if row["expires_at"] <= _utcnow().isoformat() and not row["consumed_at"]:
         c.execute(
-            "UPDATE mobile_auth_challenges SET status='expired' WHERE challenge_id=? AND status='pending'",
+            """UPDATE mobile_auth_challenges SET status='expired'
+               WHERE challenge_id=? AND status IN ('pending','approved')
+               AND consumed_at IS NULL""",
             (challenge_id,),
         )
         c.commit()
-        row = c.execute(
-            "SELECT * FROM mobile_auth_challenges WHERE challenge_id=?", (challenge_id,)
-        ).fetchone()
+        c.close()
+        return {"status": "expired"}
     if row["status"] != "approved":
         status = row["status"]
         c.close()
