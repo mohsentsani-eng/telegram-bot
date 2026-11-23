@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'screens/login_screen.dart';
+import 'screens/apex_demo_screen.dart';
 import 'screens/student_home_screen.dart';
 import 'services/mobile_auth_service.dart';
 import 'theme/app_theme.dart';
@@ -19,7 +20,9 @@ class TaranomApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       locale: const Locale('fa'),
-      home: const _AuthenticationGate(),
+      home: const bool.fromEnvironment('APEX_DEMO_MODE', defaultValue: false)
+          ? const ApexDemoScreen()
+          : const _AuthenticationGate(),
     );
   }
 }
