@@ -138,6 +138,7 @@ class MobileAuthService {
       if (response.statusCode != 200) throw Exception('بررسی وضعیت ورود ناموفق بود.');
       final result = jsonDecode(response.body) as Map<String, dynamic>;
       if (result['status'] == 'authenticated') {
+        await _storage.delete(key: 'cached_student_id');
         await _storage.write(key: 'mobile_access_token', value: result['access_token'] as String);
         await _storage.write(key: 'mobile_refresh_token', value: result['refresh_token'] as String);
         onStatus('ورود با موفقیت تأیید شد.');
