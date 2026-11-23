@@ -8,7 +8,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Header
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import db
 
@@ -191,6 +191,72 @@ def _authenticated_student(authorization: str | None):
         if not student:
             raise HTTPException(status_code=401, detail="account_unavailable")
         return dict(student)
+    finally:
+        c.close()
+
+
+
+class StudyActivityPayload(BaseModel):
+    event_id: str = Field(min_length=16, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
+    subject: str = Field(min_length=1, max_length=80)
+    activity_type: str
+    duration_minutes: int = Field(ge=1, le=720)
+    test_count: int = Field(ge=0, le=1000)
+    created_at: datetime
+
+
+class StudySyncRequest(BaseModel):
+    activities: list[StudyActivityPayload] = Field(min_length=1, max_length=50)
+
+
+@router.post("/student/study-activities/sync")
+def sync_study_activities(
+    payload: StudySyncRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Idempotent, authenticated append-only sync. Never modify legacy reports."""
+    student = _authenticated_student(authorization)
+    student_id = int(student["id"])
+    allowed = {"study", "practice", "review", "video"}
+    for item in payload.activities:
+        if item.activity_type not in allowed or not item.subject.strip():
+            raise HTTPException(status_code=422, detail="invalid_activity")
+        if item.created_at.tzinfo is None:
+            raise HTTPException(status_code=422, detail="timezone_required")
+    c = db.conn()
+    try:
+        accepted = []
+        for item in payload.activities:
+            c.execute(
+                """INSERT OR IGNORE INTO mobile_study_activities
+                   (student_id,event_id,subject,activity_type,duration_minutes,
+                    test_count,client_created_at)
+                   VALUES(?,?,?,?,?,?,?)""",
+                (student_id, item.event_id, item.subject.strip(), item.activity_type,
+                 item.duration_minutes, item.test_count,
+                 item.created_at.astimezone(timezone.utc).isoformat()),
+            )
+            existing = c.execute(
+                """SELECT subject,activity_type,duration_minutes,test_count,client_created_at
+                   FROM mobile_study_activities WHERE student_id=? AND event_id=?""",
+                (student_id, item.event_id),
+            ).fetchone()
+            # A repeated event ID with different content is a conflict, not a success.
+            if not existing or (
+                existing["subject"] != item.subject.strip()
+                or existing["activity_type"] != item.activity_type
+                or existing["duration_minutes"] != item.duration_minutes
+                or existing["test_count"] != item.test_count
+                or existing["client_created_at"] != item.created_at.astimezone(timezone.utc).isoformat()
+            ):
+                c.rollback()
+                raise HTTPException(status_code=409, detail="event_id_conflict")
+            accepted.append(item.event_id)
+        c.commit()
+        return {"accepted_event_ids": accepted}
+    except Exception:
+        c.rollback()
+        raise
     finally:
         c.close()
 
