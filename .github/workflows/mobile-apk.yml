@@ -28,6 +28,9 @@ jobs:
       - name: Generate missing Android platform scaffold
         working-directory: mobile_app
         run: flutter create --platforms=android --project-name=taranom_hamdeli --org=ir.taranomhamdeli .
+      - name: Remove generated example test
+        working-directory: mobile_app
+        run: rm -f test/widget_test.dart
       - name: Install dependencies
         working-directory: mobile_app
         run: flutter pub get
