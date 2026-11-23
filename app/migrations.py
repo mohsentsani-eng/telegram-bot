@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from . import db
 
-TARGET_VERSION = 6
+TARGET_VERSION = 7
 
 def _backup_path():
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -412,6 +412,27 @@ def migrate():
             ON mobile_sessions(telegram_id,revoked_at);
         """)
         c.execute("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(6,CURRENT_TIMESTAMP)")
+
+    # v7: idempotent offline study activity ingestion, isolated from legacy daily reports.
+    if current < 7:
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS mobile_study_activities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            event_id TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            activity_type TEXT NOT NULL,
+            duration_minutes INTEGER NOT NULL,
+            test_count INTEGER NOT NULL DEFAULT 0,
+            client_created_at TEXT NOT NULL,
+            received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(student_id,event_id),
+            FOREIGN KEY(student_id) REFERENCES students(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_mobile_study_student_date
+            ON mobile_study_activities(student_id,client_created_at);
+        """)
+        c.execute("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(7,CURRENT_TIMESTAMP)")
 
     c.execute("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(?,CURRENT_TIMESTAMP)", (TARGET_VERSION,))
     c.commit()
