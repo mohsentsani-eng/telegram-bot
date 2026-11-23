@@ -18,6 +18,27 @@ class MobileAuthService {
     await _storage.delete(key: 'mobile_refresh_token');
   }
 
+  /// Revoke the server session before clearing local credentials.
+  /// If offline, credentials are cleared locally; the remote session expires later.
+  Future<void> logout() async {
+    final access = await _storage.read(key: 'mobile_access_token');
+    final refresh = await _storage.read(key: 'mobile_refresh_token');
+    try {
+      if (access != null && refresh != null) {
+        await _client.post(
+          Uri.parse('$_baseUrl/api/v1/mobile/auth/logout'),
+          headers: {
+            'Authorization': 'Bearer $access',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({'refresh_token': refresh}),
+        ).timeout(const Duration(seconds: 8));
+      }
+    } finally {
+      await clearSession();
+    }
+  }
+
   Future<bool> restoreSession() async {
     if (!isConfigured) return false;
     final refresh = await _storage.read(key: 'mobile_refresh_token');
