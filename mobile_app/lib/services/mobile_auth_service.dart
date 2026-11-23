@@ -16,6 +16,7 @@ class MobileAuthService {
   Future<void> clearSession() async {
     await _storage.delete(key: 'mobile_access_token');
     await _storage.delete(key: 'mobile_refresh_token');
+    await _storage.delete(key: 'cached_student_id');
   }
 
   /// Revoke the server session before clearing local credentials.
@@ -72,6 +73,11 @@ class MobileAuthService {
     }
   }
 
+  Future<int?> cachedStudentId() async {
+    final id = await _storage.read(key: 'cached_student_id');
+    return id == null ? null : int.tryParse(id);
+  }
+
   /// Fetches only the currently authenticated student's profile.
   /// Refreshes expired access credentials once; never accepts a student ID.
   Future<Map<String, dynamic>> fetchStudentProfile() async {
@@ -94,7 +100,10 @@ class MobileAuthService {
     if (response.statusCode != 200) {
       throw Exception('دریافت مشخصات حساب ممکن نشد. دوباره تلاش کنید.');
     }
-    return jsonDecode(response.body) as Map<String, dynamic>;
+    final profile = jsonDecode(response.body) as Map<String, dynamic>;
+    final id = (profile['student_id'] as num).toInt();
+    await _storage.write(key: 'cached_student_id', value: id.toString());
+    return profile;
   }
 
   Future<void> loginWithTelegram({required void Function(String) onStatus}) async {
