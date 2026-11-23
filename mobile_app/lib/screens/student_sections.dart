@@ -27,6 +27,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
   int _tests = 0;
   int? _studentId;
   bool _saving = false;
+  bool _syncing = false;
   String? _error;
   List<Map<String, dynamic>> _activities = [];
 
@@ -89,6 +90,24 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     }
   }
 
+  Future<void> _sync() async {
+    if (_studentId == null || _syncing) return;
+    setState(() => _syncing = true);
+    try {
+      final count = await MobileAuthService().syncStudyActivities(_studentId!, _store);
+      final updated = await _store.read(_studentId!);
+      if (!mounted) return;
+      setState(() { _activities = updated; _error = null; });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('$count فعالیت با سرور همگام شد.'),
+      ));
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
   @override
   void dispose() {
     _subject.dispose();
@@ -103,8 +122,8 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
         fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.ink)),
       const SizedBox(height: 12),
       const Card(child: Padding(padding: EdgeInsets.all(14),
-        child: Text('فعالیت‌ها به‌صورت محلی و رمزگذاری‌شده ذخیره می‌شوند. '
-            'همگام‌سازی با سرور هنوز فعال نیست؛ تا آن زمان برنامه را حذف نکنید.',
+        child: Text('فعالیت‌ها ابتدا روی گوشی ذخیره می‌شوند. با اتصال اینترنت، '
+            'دکمه همگام‌سازی را بزنید. پیش از تأیید ارسال، برنامه را حذف نکنید.',
             style: TextStyle(fontSize: 12, height: 1.8)))),
       const SizedBox(height: 16),
       TextField(controller: _subject, maxLength: 80,
@@ -140,6 +159,12 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
         icon: const Icon(Icons.save_rounded),
         label: Text(_saving ? 'در حال ذخیره...' : 'ذخیره روی گوشی'),
       ),
+      const SizedBox(height: 12),
+      OutlinedButton.icon(
+        onPressed: _studentId == null || _syncing ? null : _sync,
+        icon: const Icon(Icons.sync_rounded),
+        label: Text(_syncing ? 'در حال همگام‌سازی...' : 'ارسال گزارش‌های ذخیره‌شده به سرور'),
+      ),
       const SizedBox(height: 24),
       Text('فعالیت‌های ثبت‌شده (${_activities.length})',
         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
@@ -147,7 +172,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       ..._activities.take(20).map((activity) => Card(child: ListTile(
         title: Text(activity['subject'] as String),
         subtitle: Text('${activity['duration_minutes']} دقیقه • '
-          '${activity['test_count']} تست • در انتظار همگام‌سازی'),
+          '${activity['test_count']} تست • ${activity['sync_state'] == 'synced' ? 'همگام‌شده' : 'در انتظار همگام‌سازی'}'),
         leading: const Icon(Icons.cloud_off_outlined, color: AppColors.primary),
       ))),
     ]),
