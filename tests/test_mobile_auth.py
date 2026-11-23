@@ -76,3 +76,57 @@ def test_mobile_login_and_profile(tmp_path, monkeypatch):
         assert getattr(exc, "status_code", None) == 401
     else:
         raise AssertionError("Reused refresh token must be rejected")
+
+
+def test_approved_challenge_expires_without_issuing_tokens(tmp_path, monkeypatch):
+    """An approved challenge must not be redeemable after its deadline."""
+    from datetime import datetime, timedelta, timezone
+
+    # Reuse the isolated schema and seeded student from the smoke test setup.
+    database = tmp_path / "expiry.sqlite3"
+    monkeypatch.setattr(db, "DB", database)
+    c = db.conn()
+    c.executescript("""
+        CREATE TABLE students (
+            id INTEGER PRIMARY KEY, telegram_id INTEGER UNIQUE NOT NULL,
+            first_name TEXT NOT NULL, last_name TEXT NOT NULL,
+            grade TEXT NOT NULL, track TEXT, city TEXT,
+            registered INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE mobile_auth_challenges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            challenge_id TEXT NOT NULL UNIQUE, secret_hash TEXT NOT NULL,
+            telegram_id INTEGER, status TEXT NOT NULL DEFAULT 'pending',
+            expires_at TEXT NOT NULL, created_at TEXT NOT NULL,
+            approved_at TEXT, consumed_at TEXT
+        );
+        CREATE TABLE mobile_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER NOT NULL,
+            access_token_hash TEXT NOT NULL UNIQUE,
+            refresh_token_hash TEXT NOT NULL UNIQUE,
+            access_expires_at TEXT NOT NULL, refresh_expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL, revoked_at TEXT
+        );
+        INSERT INTO students (telegram_id,first_name,last_name,grade)
+        VALUES (123456,'دانش','آموز','دهم');
+    """)
+    c.commit()
+    c.close()
+
+    challenge = mobile_api.create_auth_challenge(mobile_api.ChallengeRequest())
+    parts = challenge["verification_url"].split("start=", 1)[1].split("_")
+    challenge_id, secret = parts[1], parts[2]
+    assert mobile_api.approve_mobile_challenge(challenge_id, secret, 123456)
+    c = db.conn()
+    expired = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+    c.execute("UPDATE mobile_auth_challenges SET expires_at=? WHERE challenge_id=?",
+              (expired, challenge_id))
+    c.commit()
+    c.close()
+    assert mobile_api.poll_auth_challenge(
+        challenge_id, mobile_api.ChallengePollRequest(secret=secret)
+    )["status"] == "expired"
+    c = db.conn()
+    assert c.execute("SELECT COUNT(*) FROM mobile_sessions").fetchone()[0] == 0
+    c.close()
