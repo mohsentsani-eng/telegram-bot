@@ -47,7 +47,17 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
         _error = null;
       });
     } catch (_) {
-      if (mounted) setState(() => _error = 'برای ثبت گزارش، یک بار با اینترنت مشخصات حساب را دریافت کنید.');
+      final cached = await MobileAuthService().cachedStudentId();
+      if (cached != null) {
+        final activities = await _store.read(cached);
+        if (mounted) setState(() {
+          _studentId = cached;
+          _activities = activities;
+          _error = null;
+        });
+      } else if (mounted) {
+        setState(() => _error = 'برای ثبت گزارش، یک بار با اینترنت مشخصات حساب را دریافت کنید.');
+      }
     }
   }
 
