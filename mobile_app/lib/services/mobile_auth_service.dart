@@ -1,3 +1,4 @@
+import 'study_activity_store.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -104,6 +105,46 @@ class MobileAuthService {
     final id = (profile['student_id'] as num).toInt();
     await _storage.write(key: 'cached_student_id', value: id.toString());
     return profile;
+  }
+
+  /// Send pending activities in batches, acknowledging only IDs confirmed by server.
+  Future<int> syncStudyActivities(int studentId, StudyActivityStore store) async {
+    final profile = await fetchStudentProfile();
+    if ((profile['student_id'] as num).toInt() != studentId) {
+      throw StateError('شناسه حساب با گزارش‌های محلی مطابقت ندارد.');
+    }
+    var access = await _storage.read(key: 'mobile_access_token');
+    if (access == null) throw StateError('ابتدا وارد شوید.');
+    final pending = (await store.read(studentId))
+        .where((a) => a['sync_state'] != 'synced').toList();
+    var synced = 0;
+    for (var offset = 0; offset < pending.length; offset += 50) {
+      final batch = pending.skip(offset).take(50).toList();
+      Future<http.Response> send(String token) => _client.post(
+        Uri.parse('$_baseUrl/api/v1/mobile/student/study-activities/sync'),
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+        body: jsonEncode({'activities': batch}),
+      ).timeout(const Duration(seconds: 20));
+      var response = await send(access);
+      if (response.statusCode == 401) {
+        if (!await restoreSession()) throw StateError('نشست منقضی شده است.');
+        access = await _storage.read(key: 'mobile_access_token');
+        if (access == null) throw StateError('ورود دوباره لازم است.');
+        response = await send(access);
+      }
+      if (response.statusCode != 200) {
+        throw StateError('همگام‌سازی انجام نشد (کد ${response.statusCode}). گزارش‌ها روی گوشی باقی می‌مانند.');
+      }
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final ids = (body['accepted_event_ids'] as List<dynamic>).cast<String>();
+      final expected = batch.map((e) => e['event_id'] as String).toSet();
+      if (ids.toSet().length != expected.length || !expected.containsAll(ids)) {
+        throw StateError('تأیید سرور با گزارش‌های ارسالی مطابقت ندارد.');
+      }
+      await store.markSynced(studentId, ids);
+      synced += ids.length;
+    }
+    return synced;
   }
 
   Future<void> loginWithTelegram({required void Function(String) onStatus}) async {
