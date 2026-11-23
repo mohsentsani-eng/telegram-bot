@@ -155,7 +155,15 @@ class MobileAuthService {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'platform': 'flutter'}),
     );
-    if (created.statusCode != 200) throw Exception('ساخت درخواست ورود ناموفق بود.');
+    if (created.statusCode == 404) {
+      throw Exception('قابلیت ورود اپ هنوز روی سرور فعال نشده است. لطفاً منتظر نسخه متصل به سرور آزمایشی باشید.');
+    }
+    if (created.statusCode == 502 || created.statusCode == 503 || created.statusCode == 504) {
+      throw Exception('سرور موقتاً در دسترس نیست. کمی بعد دوباره امتحان کنید.');
+    }
+    if (created.statusCode != 200) {
+      throw Exception('ساخت درخواست ورود ناموفق بود (کد ${created.statusCode}).');
+    }
     final challenge = jsonDecode(created.body) as Map<String, dynamic>;
     final challengeId = challenge['challenge_id'] as String;
     final verificationUrl = Uri.parse(challenge['verification_url'] as String);
