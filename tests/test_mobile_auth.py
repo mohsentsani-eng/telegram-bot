@@ -77,6 +77,37 @@ def test_mobile_login_and_profile(tmp_path, monkeypatch):
     else:
         raise AssertionError("Reused refresh token must be rejected")
 
+    # Sync one event twice: server must store it once and acknowledge both requests.
+    from datetime import datetime, timezone
+    db_conn = db.conn()
+    db_conn.executescript("""
+        CREATE TABLE mobile_study_activities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL, event_id TEXT NOT NULL,
+            subject TEXT NOT NULL, activity_type TEXT NOT NULL,
+            duration_minutes INTEGER NOT NULL, test_count INTEGER NOT NULL,
+            client_created_at TEXT NOT NULL,
+            received_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(student_id,event_id)
+        );
+    """)
+    db_conn.commit()
+    db_conn.close()
+    event = mobile_api.StudyActivityPayload(
+        event_id="offline-event-0001", subject="زیست",
+        activity_type="study", duration_minutes=45, test_count=10,
+        created_at=datetime.now(timezone.utc),
+    )
+    request = mobile_api.StudySyncRequest(activities=[event])
+    bearer_new = "Bearer " + refreshed["access_token"]
+    first = mobile_api.sync_study_activities(request, authorization=bearer_new)
+    second = mobile_api.sync_study_activities(request, authorization=bearer_new)
+    assert first["accepted_event_ids"] == ["offline-event-0001"]
+    assert second == first
+    db_conn = db.conn()
+    assert db_conn.execute("SELECT COUNT(*) FROM mobile_study_activities").fetchone()[0] == 1
+    db_conn.close()
+
     # Logout revokes the refreshed session, not the previously rotated one.
     refreshed_bearer = "Bearer " + refreshed["access_token"]
     result = mobile_api.logout_session(
