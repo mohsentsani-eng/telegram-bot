@@ -49,6 +49,31 @@ class MobileAuthService {
     }
   }
 
+  /// Fetches only the currently authenticated student's profile.
+  /// Refreshes expired access credentials once; never accepts a student ID.
+  Future<Map<String, dynamic>> fetchStudentProfile() async {
+    var access = await _storage.read(key: 'mobile_access_token');
+    if (access == null) throw Exception('ابتدا وارد حساب خود شوید.');
+    var response = await _client.get(
+      Uri.parse('$_baseUrl/api/v1/mobile/student/profile'),
+      headers: {'Authorization': 'Bearer $access'},
+    ).timeout(const Duration(seconds: 15));
+    if (response.statusCode == 401) {
+      final restored = await restoreSession();
+      if (!restored) throw Exception('نشست شما منقضی شده است. دوباره وارد شوید.');
+      access = await _storage.read(key: 'mobile_access_token');
+      if (access == null) throw Exception('ورود مجدد لازم است.');
+      response = await _client.get(
+        Uri.parse('$_baseUrl/api/v1/mobile/student/profile'),
+        headers: {'Authorization': 'Bearer $access'},
+      ).timeout(const Duration(seconds: 15));
+    }
+    if (response.statusCode != 200) {
+      throw Exception('دریافت مشخصات حساب ممکن نشد. دوباره تلاش کنید.');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<void> loginWithTelegram({required void Function(String) onStatus}) async {
     if (!isConfigured) throw Exception('نشانی امن سرور هنوز در نسخه آزمایشی تنظیم نشده است.');
     onStatus('در حال ساخت درخواست ورود امن...');
