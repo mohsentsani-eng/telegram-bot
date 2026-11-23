@@ -35,6 +35,10 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    refresh_token: str
+
+
 class ChallengePollRequest(BaseModel):
     secret: str
 
@@ -265,6 +269,32 @@ def refresh_session(payload: RefreshRequest):
     c.commit()
     c.close()
     return {"role": "student", **tokens}
+
+
+@router.post("/auth/logout")
+def logout_session(payload: LogoutRequest, authorization: str | None = Header(default=None)):
+    """Revoke the current session, requiring both its access and refresh credentials."""
+    scheme, _, access_token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not access_token:
+        raise HTTPException(status_code=401, detail="missing_access_token")
+    c = db.conn()
+    try:
+        session = c.execute(
+            """SELECT id FROM mobile_sessions
+               WHERE access_token_hash=? AND refresh_token_hash=?
+               AND revoked_at IS NULL""",
+            (_hash(access_token), _hash(payload.refresh_token)),
+        ).fetchone()
+        if not session:
+            raise HTTPException(status_code=401, detail="invalid_session")
+        c.execute(
+            "UPDATE mobile_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL",
+            (_utcnow().isoformat(), session["id"]),
+        )
+        c.commit()
+        return {"logged_out": True}
+    finally:
+        c.close()
 
 
 def approve_mobile_challenge(challenge_id: str, secret: str, telegram_id: int) -> bool:
