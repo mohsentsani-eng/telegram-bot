@@ -77,6 +77,26 @@ def test_mobile_login_and_profile(tmp_path, monkeypatch):
     else:
         raise AssertionError("Reused refresh token must be rejected")
 
+    # Logout revokes the refreshed session, not the previously rotated one.
+    refreshed_bearer = "Bearer " + refreshed["access_token"]
+    result = mobile_api.logout_session(
+        mobile_api.LogoutRequest(refresh_token=refreshed["refresh_token"]),
+        authorization=refreshed_bearer,
+    )
+    assert result == {"logged_out": True}
+    for operation in (
+        lambda: mobile_api.mobile_student_profile(authorization=refreshed_bearer),
+        lambda: mobile_api.refresh_session(
+            mobile_api.RefreshRequest(refresh_token=refreshed["refresh_token"])
+        ),
+    ):
+        try:
+            operation()
+        except Exception as exc:
+            assert getattr(exc, "status_code", None) == 401
+        else:
+            raise AssertionError("Logged-out session must not remain valid")
+
 
 def test_approved_challenge_expires_without_issuing_tokens(tmp_path, monkeypatch):
     """An approved challenge must not be redeemable after its deadline."""
