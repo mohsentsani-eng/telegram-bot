@@ -15,6 +15,16 @@ class StudyActivityStore {
     return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
+  Future<void> markSynced(int studentId, List<String> acceptedIds) async {
+    if (acceptedIds.isEmpty) return;
+    final ids = acceptedIds.toSet();
+    final activities = await read(studentId);
+    for (final activity in activities) {
+      if (ids.contains(activity['event_id'])) activity['sync_state'] = 'synced';
+    }
+    await _storage.write(key: '$_prefix$studentId', value: jsonEncode(activities));
+  }
+
   Future<Map<String, dynamic>> add({
     required int studentId,
     required String subject,
