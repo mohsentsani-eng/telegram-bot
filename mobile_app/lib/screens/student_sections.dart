@@ -1,3 +1,4 @@
+import '../services/mobile_auth_service.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
@@ -95,13 +96,84 @@ class _OfflineNotice extends StatelessWidget {
   Widget build(BuildContext context) => Container(padding: const EdgeInsets.all(13), decoration: BoxDecoration(color: const Color(0xFFEAF6F0), borderRadius: BorderRadius.circular(14)), child: const Row(children: [Icon(Icons.cloud_done_outlined, color: AppColors.success), SizedBox(width: 8), Expanded(child: Text('این بخش نمایشی است؛ ذخیره‌سازی امن و آفلاین هنوز فعال نشده است.', style: TextStyle(color: AppColors.success, fontSize: 11)))]));
 }
 
-class StudentProfileScreen extends StatelessWidget {
+class StudentProfileScreen extends StatefulWidget {
   const StudentProfileScreen({super.key});
+
   @override
-  Widget build(BuildContext context) => const _SimpleStudentPage(
-    title: 'حساب من',
-    subtitle: 'اطلاعات و تنظیمات حساب دانش‌آموز',
-    icon: Icons.person_rounded,
-    items: ['مشخصات دانش‌آموز','پایه و رشته تحصیلی','تنظیمات اعلان‌ها','حریم خصوصی و امنیت','راهنما و ارتباط با ترنم همدلی'],
+  State<StudentProfileScreen> createState() => _StudentProfileScreenState();
+}
+
+class _StudentProfileScreenState extends State<StudentProfileScreen> {
+  late Future<Map<String, dynamic>> _profile;
+
+  @override
+  void initState() {
+    super.initState();
+    _profile = MobileAuthService().fetchStudentProfile();
+  }
+
+  void _retry() => setState(() {
+    _profile = MobileAuthService().fetchStudentProfile();
+  });
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('حساب من'), backgroundColor: AppColors.canvas),
+    body: FutureBuilder<Map<String, dynamic>>(
+      future: _profile,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.wifi_off_rounded, color: AppColors.muted, size: 42),
+              const SizedBox(height: 12),
+              const Text('دریافت مشخصات ممکن نشد. اتصال اینترنت را بررسی کنید.'),
+              const SizedBox(height: 12),
+              FilledButton(onPressed: _retry, child: const Text('تلاش دوباره')),
+            ]),
+          ));
+        }
+        final data = snapshot.data!;
+        String value(String key) {
+          final v = data[key]?.toString().trim() ?? '';
+          return v.isEmpty ? 'ثبت نشده' : v;
+        }
+        final fullName = '${value('first_name')} ${value('last_name')}';
+        return ListView(padding: const EdgeInsets.all(20), children: [
+          Card(child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(children: [
+              const CircleAvatar(radius: 30, backgroundColor: AppColors.sky,
+                child: Icon(Icons.person_rounded, color: AppColors.primary, size: 32)),
+              const SizedBox(height: 12),
+              Text(fullName, textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 5),
+              const Text('اطلاعات تأییدشده حساب دانش‌آموز',
+                style: TextStyle(fontSize: 12, color: AppColors.muted)),
+            ]),
+          )),
+          const SizedBox(height: 14),
+          _profileItem('پایه تحصیلی', value('grade')),
+          _profileItem('رشته تحصیلی', value('track')),
+          _profileItem('شهر', value('city')),
+          const SizedBox(height: 18),
+          const Text('این اطلاعات از پرونده ثبت‌شده شما در مرکز دریافت می‌شود. '
+              'در صورت نیاز به اصلاح، با مرکز ترنم همدلی تماس بگیرید.',
+              style: TextStyle(fontSize: 12, height: 1.8, color: AppColors.muted)),
+        ]);
+      },
+    ),
+  );
+
+  Widget _profileItem(String label, String value) => Card(
+    child: ListTile(
+      title: Text(label, style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+      subtitle: Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
+    ),
   );
 }
