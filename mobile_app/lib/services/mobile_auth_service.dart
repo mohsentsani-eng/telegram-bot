@@ -125,7 +125,7 @@ class MobileAuthService {
         headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
         body: jsonEncode({'activities': batch}),
       ).timeout(const Duration(seconds: 20));
-      var response = await send(access);
+      var response = await send(access!);
       if (response.statusCode == 401) {
         if (!await restoreSession()) throw StateError('نشست منقضی شده است.');
         access = await _storage.read(key: 'mobile_access_token');
