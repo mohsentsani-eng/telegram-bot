@@ -48,6 +48,8 @@ class _AuthenticationGateState extends State<_AuthenticationGate> {
 
   void _onAuthenticated() => setState(() => _authenticated = true);
 
+  void _onLoggedOut() => setState(() => _authenticated = false);
+
   @override
   Widget build(BuildContext context) {
     if (_authenticated == null) {
@@ -59,6 +61,6 @@ class _AuthenticationGateState extends State<_AuthenticationGate> {
     if (!_authenticated!) {
       return LoginScreen(onAuthenticated: _onAuthenticated);
     }
-    return const StudentHomeScreen();
+    return StudentHomeScreen(onLoggedOut: _onLoggedOut);
   }
 }
