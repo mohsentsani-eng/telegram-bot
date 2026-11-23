@@ -12,6 +12,11 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   static const storageKey = 'apex360_offline_v1';
   final taskController = TextEditingController();
   final subjectController = TextEditingController();
+  final topicController = TextEditingController();
+  final noteController = TextEditingController();
+  int plannedMinutes = 60, priority = 2;
+  DateTime selectedDate = DateTime.now();
+  String get selectedDay => selectedDate.toIso8601String().substring(0, 10);
   int tab = 0, minutes = 45, tests = 0, satisfaction = 7, mood = 3, stress = 3;
   bool ready = false;
   List<Map<String, dynamic>> tasks = [], reports = [];
@@ -43,8 +48,9 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   Future<void> addTask() async {
     final name = taskController.text.trim();
     if (name.isEmpty) return;
-    setState(() => tasks.insert(0, {'title': name, 'date': today, 'done': false}));
+    setState(() => tasks.insert(0, {'title': name, 'topic': topicController.text.trim(), 'date': selectedDay, 'plannedMinutes': plannedMinutes, 'priority': priority, 'done': false}));
     taskController.clear();
+    topicController.clear();
     await save();
   }
   Future<void> addReport() async {
@@ -52,12 +58,13 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     if (name.isEmpty) return;
     setState(() => reports.insert(0, {'subject': name, 'date': today,
       'minutes': minutes, 'tests': tests, 'satisfaction': satisfaction,
-      'mood': mood, 'stress': stress}));
+      'mood': mood, 'stress': stress, 'note': noteController.text.trim()}));
     subjectController.clear();
+    noteController.clear();
     await save();
   }
   @override
-  void dispose() { taskController.dispose(); subjectController.dispose(); super.dispose(); }
+  void dispose() { taskController.dispose(); subjectController.dispose(); topicController.dispose(); noteController.dispose(); super.dispose(); }
   Widget heading(String label) => Padding(
     padding: const EdgeInsets.only(bottom: 12),
     child: Text(label, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)));
@@ -83,11 +90,29 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     heading('برنامه مطالعاتی روزانه'),
     TextField(controller: taskController, maxLength: 100,
       decoration: const InputDecoration(labelText: 'درس یا تکلیف', hintText: 'مثلاً مرور زیست')),
-    FilledButton(onPressed: addTask, child: const Text('افزودن به برنامه امروز')),
+    TextField(controller: topicController, maxLength: 100,
+      decoration: const InputDecoration(labelText: 'مبحث یا نوع فعالیت', hintText: 'مثلاً تست فصل دوم')),
+    OutlinedButton.icon(onPressed: () async {
+      final picked = await showDatePicker(context: context, initialDate: selectedDate,
+        firstDate: DateTime(2024), lastDate: DateTime(2035));
+      if (picked != null) setState(() => selectedDate = picked);
+    }, icon: const Icon(Icons.event), label: Text('تاریخ برنامه: ' + selectedDay)),
+    Text('زمان پیش‌بینی‌شده: ' + plannedMinutes.toString() + ' دقیقه'),
+    Slider(value: plannedMinutes.toDouble(), min: 15, max: 240, divisions: 15,
+      onChanged: (v) => setState(() => plannedMinutes = v.round())),
+    Text('اولویت: ' + (priority == 1 ? 'زیاد' : priority == 2 ? 'متوسط' : 'کم')),
+    SegmentedButton<int>(segments: const [
+      ButtonSegment(value: 1, label: Text('زیاد')),
+      ButtonSegment(value: 2, label: Text('متوسط')),
+      ButtonSegment(value: 3, label: Text('کم')),
+    ], selected: {priority}, onSelectionChanged: (v) => setState(() => priority = v.first)),
+    FilledButton(onPressed: addTask, child: const Text('افزودن به برنامه')),
     if (tasks.isEmpty) const Text('هنوز تکلیفی ثبت نشده است.'),
     ...tasks.asMap().entries.map((entry) => Card(child: CheckboxListTile(
       title: Text(entry.value['title'] as String),
-      subtitle: Text(entry.value['date'] as String),
+      subtitle: Text(entry.value['date'].toString() +
+        ' • ' + (entry.value['topic'] ?? '').toString() +
+        ' • ' + (entry.value['plannedMinutes'] ?? 'نامشخص').toString() + ' دقیقه'),
       value: entry.value['done'] == true,
       onChanged: (value) async {
         setState(() => tasks[entry.key]['done'] = value ?? false);
@@ -113,6 +138,8 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     Text('استرس امروز: ' + stress.toString() + ' از ۵'),
     Slider(value: stress.toDouble(), min: 1, max: 5, divisions: 4,
       onChanged: (value) => setState(() => stress = value.round())),
+    TextField(controller: noteController, maxLines: 3, maxLength: 400,
+      decoration: const InputDecoration(labelText: 'کارهای انجام‌نشده و علت آن / توضیحات')),
     FilledButton(onPressed: addReport, child: const Text('ذخیره گزارش روی گوشی')),
     const SizedBox(height: 16),
     heading('گزارش‌های ثبت‌شده'),
@@ -129,10 +156,20 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     });
     final total = days.fold<int>(0, (n, d) => n + d.sum);
     final maximum = days.fold<int>(60, (n, d) => d.sum > n ? d.sum : n);
+    final recentDates = days.map((d) => d.date).toSet();
+    final recentTasks = tasks.where((t) => recentDates.contains(t['date'])).toList();
+    final completed = recentTasks.where((t) => t['done'] == true).length;
+    final planned = recentTasks.fold<int>(0, (n, t) => n + ((t['plannedMinutes'] as num?)?.toInt() ?? 0));
+    final percent = recentTasks.isEmpty ? 0 : (100 * completed / recentTasks.length).round();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       heading('پیشرفت هفت روز گذشته'),
       Card(child: ListTile(title: const Text('مجموع مطالعه هفتگی'),
         trailing: Text((total / 60).toStringAsFixed(1) + ' ساعت'))),
+      Card(child: ListTile(title: const Text('پایبندی به برنامه هفتگی'),
+        subtitle: Text(completed.toString() + ' تکلیف از ' + recentTasks.length.toString()),
+        trailing: Text(percent.toString() + '٪'))),
+      Card(child: ListTile(title: const Text('زمان برنامه‌ریزی‌شده هفتگی'),
+        trailing: Text(planned.toString() + ' دقیقه'))),
       ...days.map((d) => Padding(padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(children: [
           SizedBox(width: 60, child: Text(d.date.substring(5))),
