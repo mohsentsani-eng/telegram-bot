@@ -261,6 +261,19 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         trailing: Text(percent.toString() + '٪'))),
       Card(child: ListTile(title: const Text('زمان برنامه‌ریزی‌شده هفتگی'),
         trailing: Text(planned.toString() + ' دقیقه'))),
+      heading('کیفیت عملکرد و حال عمومی'),
+      if (reports.where((r) => recentDates.contains(r['date'])).isEmpty)
+        const Text('برای مشاهده روند، گزارش مطالعه ثبت کنید.'),
+      ...['satisfaction', 'mood', 'stress'].map((key) {
+        final values = reports.where((r) => recentDates.contains(r['date']) && r[key] is num).map((r) => (r[key] as num).toDouble()).toList();
+        final limit = key == 'satisfaction' ? 10 : 5;
+        final label = key == 'satisfaction' ? 'رضایت از عملکرد' : key == 'mood' ? 'خلق خودگزارش‌شده' : 'استرس خودگزارش‌شده';
+        final average = values.isEmpty ? 0.0 : values.reduce((a, b) => a + b) / values.length;
+        return Card(child: ListTile(title: Text(label),
+          subtitle: values.isEmpty ? const Text('داده کافی نیست') : LinearProgressIndicator(value: (average / limit).clamp(0.0, 1.0).toDouble()),
+          trailing: Text(values.isEmpty ? '—' : '${average.toStringAsFixed(1)} از $limit')));
+      }),
+      const Text('این شاخص‌ها میانگین گزارش‌های شخصی هستند و تشخیص روان‌شناختی محسوب نمی‌شوند.'),
       heading('عملکرد به تفکیک درس'),
       if (bySubject.isEmpty) const Text('هنوز گزارشی در این هفته ثبت نشده است.'),
       ...bySubject.entries.map((e) => Card(child: ListTile(
