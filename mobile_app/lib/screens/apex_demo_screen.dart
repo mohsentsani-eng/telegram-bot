@@ -22,6 +22,10 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   String get selectedDay => selectedDate.toIso8601String().substring(0, 10);
   int tab = 0, minutes = 45, tests = 0, satisfaction = 7, mood = 3, stress = 3;
   bool ready = false;
+  final nameController = TextEditingController();
+  final gradeController = TextEditingController();
+  final trackController = TextEditingController();
+  String studentName = '', studentGrade = '', studentTrack = '';
   List<Map<String, dynamic>> tasks = [], reports = [];
   String get today => DateTime.now().toIso8601String().substring(0, 10);
 
@@ -33,6 +37,12 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       final raw = prefs.getString(storageKey);
       if (raw != null) {
         final data = jsonDecode(raw) as Map<String, dynamic>;
+        studentName = data['studentName']?.toString() ?? '';
+        studentGrade = data['studentGrade']?.toString() ?? '';
+        studentTrack = data['studentTrack']?.toString() ?? '';
+        nameController.text = studentName;
+        gradeController.text = studentGrade;
+        trackController.text = studentTrack;
         tasks = (data['tasks'] as List<dynamic>).map((v) => Map<String, dynamic>.from(v as Map)).toList();
         reports = (data['reports'] as List<dynamic>).map((v) => Map<String, dynamic>.from(v as Map)).toList();
       }
@@ -44,7 +54,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   }
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
-    final success = await prefs.setString(storageKey, jsonEncode({'tasks': tasks, 'reports': reports}));
+    final success = await prefs.setString(storageKey, jsonEncode({'tasks': tasks, 'reports': reports, 'studentName': studentName, 'studentGrade': studentGrade, 'studentTrack': studentTrack}));
     if (!success && mounted) ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('ذخیره اطلاعات ناموفق بود.')));
   }
@@ -72,7 +82,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     await save();
   }
   @override
-  void dispose() { taskController.dispose(); subjectController.dispose(); topicController.dispose(); noteController.dispose(); super.dispose(); }
+  void dispose() { taskController.dispose(); subjectController.dispose(); topicController.dispose(); noteController.dispose(); nameController.dispose(); gradeController.dispose(); trackController.dispose(); super.dispose(); }
   Widget heading(String label) => Padding(
     padding: const EdgeInsets.only(bottom: 12),
     child: Text(label, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)));
@@ -84,7 +94,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     final total = currentReports.fold<int>(0, (sum, r) => sum + (r['minutes'] as int));
     final count = currentReports.fold<int>(0, (sum, r) => sum + (r['tests'] as int));
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      heading('سلام! امروز چه قدمی برای پیشرفتت برداشتی؟ 🌱'),
+      heading(studentName.isEmpty ? 'سلام! امروز چه قدمی برای پیشرفتت برداشتی؟ 🌱' : 'سلام $studentName! امروز چه قدمی برای پیشرفتت برداشتی؟ 🌱'),
       Card(child: ListTile(title: const Text('اجرای برنامه امروز'),
         subtitle: LinearProgressIndicator(value: current.isEmpty ? 0 : done / current.length),
         trailing: Text(done.toString() + ' از ' + current.length.toString()))),
@@ -233,8 +243,19 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   Widget account() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     heading('حساب محلی'),
     const Text('نسخه آزمایشی ۱۱ • تحلیل درس و تکمیل تکلیف'),
-    const Card(child: ListTile(title: Text('Apex360 ترنم همدلی'),
-      subtitle: Text('حساب آزمایشی؛ بدون اتصال به پرونده دانش‌آموز'))),
+    const Card(child: ListTile(title: Text('پروفایل دانش‌آموز'),
+      subtitle: Text('مشخصات محلی؛ بدون اتصال به پرونده آنلاین'))),
+    TextField(controller: nameController, maxLength: 80, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی')),
+    TextField(controller: gradeController, maxLength: 30, decoration: const InputDecoration(labelText: 'پایه تحصیلی')),
+    TextField(controller: trackController, maxLength: 40, decoration: const InputDecoration(labelText: 'رشته تحصیلی (در صورت وجود)')),
+    FilledButton(onPressed: () async {
+      if (nameController.text.trim().isEmpty || gradeController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('نام و پایه تحصیلی را وارد کنید.')));
+        return;
+      }
+      setState(() { studentName = nameController.text.trim(); studentGrade = gradeController.text.trim(); studentTrack = trackController.text.trim(); });
+      await save();
+    }, child: const Text('ذخیره مشخصات روی گوشی')),
     Card(child: ListTile(title: const Text('تکالیف ذخیره‌شده'), trailing: Text(tasks.length.toString()))),
     Card(child: ListTile(title: const Text('گزارش‌های ذخیره‌شده'), trailing: Text(reports.length.toString()))),
   ]);
