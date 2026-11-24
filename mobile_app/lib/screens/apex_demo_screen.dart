@@ -21,6 +21,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   String? filterDay;
   bool completeLinkedTask = false;
   int reportFormVersion = 0;
+  int? editingReportIndex;
   DateTime selectedDate = DateTime.now();
   String get selectedDay => selectedDate.toIso8601String().substring(0, 10);
   int tab = 0, minutes = 45, tests = 0, satisfaction = 7, mood = 3, stress = 3;
@@ -86,9 +87,12 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     final linked = linkedTaskIndex == null ? null : tasks[linkedTaskIndex!];
     setState(() {
       if (linked != null && completeLinkedTask) linked['done'] = true;
-      reports.insert(0, {'subject': name, 'date': today, 'linkedTitle': linked?['title'], 'linkedDate': linked?['date'],
+      final previous = editingReportIndex == null ? null : reports[editingReportIndex!];
+      final report = <String, dynamic>{...?previous, 'subject': name, 'date': previous?['date'] ?? today, 'linkedTitle': linked?['title'] ?? previous?['linkedTitle'], 'linkedDate': linked?['date'] ?? previous?['linkedDate'],
       'minutes': minutes, 'tests': tests, 'satisfaction': satisfaction,
-      'mood': mood, 'stress': stress, 'note': noteController.text.trim()});
+      'mood': mood, 'stress': stress, 'note': noteController.text.trim()};
+      if (editingReportIndex == null) { reports.insert(0, report); } else { reports[editingReportIndex!] = report; }
+      editingReportIndex = null;
     });
     subjectController.clear();
     noteController.clear();
@@ -218,7 +222,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       decoration: const InputDecoration(labelText: 'نام درس')),
     Text('مدت مطالعه: ' + minutes.toString() + ' دقیقه'),
     Row(children: [const Text('ورود دقیق (دقیقه): '),
-      Expanded(child: TextFormField(initialValue: minutes.toString(),
+      Expanded(child: TextFormField(key: ValueKey('minutes-$reportFormVersion'), initialValue: minutes.toString(),
         keyboardType: TextInputType.number,
         decoration: const InputDecoration(hintText: 'دقیقه'),
         onChanged: (v) { final n = int.tryParse(v); if (n != null && n >= 0 && n <= 600) setState(() => minutes = n); },
@@ -239,12 +243,18 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       onChanged: (value) => setState(() => stress = value.round())),
     TextField(controller: noteController, maxLines: 3, maxLength: 400,
       decoration: const InputDecoration(labelText: 'کارهای انجام‌نشده و علت آن / توضیحات')),
-    FilledButton(onPressed: addReport, child: const Text('ذخیره گزارش روی گوشی')),
+    FilledButton(onPressed: addReport, child: Text(editingReportIndex == null ? 'ذخیره گزارش روی گوشی' : 'ذخیره اصلاحات گزارش')),
+    if (editingReportIndex != null) TextButton(onPressed: () => setState(() { editingReportIndex = null; subjectController.clear(); noteController.clear(); linkedTaskIndex = null; completeLinkedTask = false; reportFormVersion++; }), child: const Text('انصراف از ویرایش گزارش')),
     const SizedBox(height: 16),
     heading('گزارش‌های ثبت‌شده'),
-    ...reports.take(30).map((r) => Card(child: ListTile(
+    ...reports.asMap().entries.take(30).map((entry) { final r = entry.value; return Card(child: ListTile(
       title: Text(r['subject'].toString() + ' • ' + r['minutes'].toString() + ' دقیقه • ' + r['tests'].toString() + ' تست'),
-      subtitle: Text(r['date'].toString() + ' | رضایت ' + r['satisfaction'].toString() + '/۱۰ | خلق ' + r['mood'].toString() + '/۵ | استرس ' + r['stress'].toString() + '/۵')))),
+      subtitle: Text(r['date'].toString() + ' | رضایت ' + r['satisfaction'].toString() + '/۱۰ | خلق ' + r['mood'].toString() + '/۵ | استرس ' + r['stress'].toString() + '/۵'),
+      trailing: IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'ویرایش گزارش', onPressed: () => setState(() {
+        editingReportIndex = entry.key; subjectController.text = r['subject'].toString(); noteController.text = (r['note'] ?? '').toString();
+        minutes = (r['minutes'] as num).toInt(); tests = (r['tests'] as num).toInt(); satisfaction = (r['satisfaction'] as num).toInt(); mood = (r['mood'] as num).toInt(); stress = (r['stress'] as num).toInt();
+        linkedTaskIndex = null; completeLinkedTask = false; reportFormVersion++;
+      })))); }),
   ]);
   Widget progress() {
     final now = DateTime.now();
