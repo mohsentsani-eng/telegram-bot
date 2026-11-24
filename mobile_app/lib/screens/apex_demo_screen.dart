@@ -18,6 +18,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   int? linkedTaskIndex;
   int? editingTaskIndex;
   int planFormVersion = 0;
+  String? filterDay;
   bool completeLinkedTask = false;
   int reportFormVersion = 0;
   DateTime selectedDate = DateTime.now();
@@ -147,8 +148,22 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     if (editingTaskIndex != null) TextButton(onPressed: () => setState(() {
       editingTaskIndex = null; taskController.clear(); topicController.clear(); planFormVersion++;
     }), child: const Text('انصراف از ویرایش')),
-    if (tasks.isEmpty) const Text('هنوز تکلیفی ثبت نشده است.'),
-    ...tasks.asMap().entries.map((entry) => Card(child: Column(children: [CheckboxListTile(
+    heading('نمای هفتگی برنامه'),
+    Wrap(spacing: 6, runSpacing: 6, children: [
+      ChoiceChip(label: const Text('همه'), selected: filterDay == null, onSelected: (_) => setState(() => filterDay = null)),
+      ...List.generate(7, (i) {
+        final now = DateTime.now();
+        final day = DateTime(now.year, now.month, now.day - (now.weekday + 1) % 7 + i);
+        final date = day.toIso8601String().substring(0, 10);
+        final count = tasks.where((t) => t['date'] == date).length;
+        final done = tasks.where((t) => t['date'] == date && t['done'] == true).length;
+        final label = ['شنبه','یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه'][i];
+        return ChoiceChip(label: Text('$label $done/$count'), selected: filterDay == date,
+          onSelected: (_) => setState(() => filterDay = date));
+      }),
+    ]),
+    if (!tasks.any((t) => filterDay == null || t['date'] == filterDay)) const Text('برای این بازه تکلیفی ثبت نشده است.'),
+    ...tasks.asMap().entries.where((entry) => filterDay == null || entry.value['date'] == filterDay).map((entry) => Card(child: Column(children: [CheckboxListTile(
       title: Text(entry.value['title'] as String),
       subtitle: Text(entry.value['date'].toString() +
         ' • ' + (entry.value['topic'] ?? '').toString() +
