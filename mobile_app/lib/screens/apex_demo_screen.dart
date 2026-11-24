@@ -16,6 +16,8 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   final noteController = TextEditingController();
   int plannedMinutes = 60, priority = 2;
   int? linkedTaskIndex;
+  int? editingTaskIndex;
+  int planFormVersion = 0;
   bool completeLinkedTask = false;
   int reportFormVersion = 0;
   DateTime selectedDate = DateTime.now();
@@ -61,7 +63,18 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   Future<void> addTask() async {
     final name = taskController.text.trim();
     if (name.isEmpty) return;
-    setState(() => tasks.insert(0, {'title': name, 'topic': topicController.text.trim(), 'date': selectedDay, 'plannedMinutes': plannedMinutes, 'priority': priority, 'done': false}));
+    setState(() {
+      final task = <String, dynamic>{'title': name, 'topic': topicController.text.trim(), 'date': selectedDay, 'plannedMinutes': plannedMinutes, 'priority': priority, 'done': false};
+      if (editingTaskIndex != null) {
+        final i = editingTaskIndex!;
+        tasks[i] = {...tasks[i], ...task, 'done': tasks[i]['done']};
+      } else { tasks.insert(0, task); }
+      editingTaskIndex = null;
+      linkedTaskIndex = null;
+      completeLinkedTask = false;
+      reportFormVersion++;
+      planFormVersion++;
+    });
     taskController.clear();
     topicController.clear();
     await save();
@@ -117,7 +130,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     }, icon: const Icon(Icons.event), label: Text('تاریخ برنامه: ' + selectedDay)),
     Text('زمان پیش‌بینی‌شده: ' + plannedMinutes.toString() + ' دقیقه'),
     Row(children: [const Text('ورود دقیق (دقیقه): '),
-      Expanded(child: TextFormField(initialValue: plannedMinutes.toString(),
+      Expanded(child: TextFormField(key: ValueKey(planFormVersion), initialValue: plannedMinutes.toString(),
         keyboardType: TextInputType.number,
         decoration: const InputDecoration(hintText: 'دقیقه'),
         onChanged: (v) { final n = int.tryParse(v); if (n != null && n >= 0 && n <= 600) setState(() => plannedMinutes = n); },
@@ -130,9 +143,12 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       ButtonSegment(value: 2, label: Text('متوسط')),
       ButtonSegment(value: 3, label: Text('کم')),
     ], selected: {priority}, onSelectionChanged: (v) => setState(() => priority = v.first)),
-    FilledButton(onPressed: addTask, child: const Text('افزودن به برنامه')),
+    FilledButton(onPressed: addTask, child: Text(editingTaskIndex == null ? 'افزودن به برنامه' : 'ذخیره تغییرات')),
+    if (editingTaskIndex != null) TextButton(onPressed: () => setState(() {
+      editingTaskIndex = null; taskController.clear(); topicController.clear(); planFormVersion++;
+    }), child: const Text('انصراف از ویرایش')),
     if (tasks.isEmpty) const Text('هنوز تکلیفی ثبت نشده است.'),
-    ...tasks.asMap().entries.map((entry) => Card(child: CheckboxListTile(
+    ...tasks.asMap().entries.map((entry) => Card(child: Column(children: [CheckboxListTile(
       title: Text(entry.value['title'] as String),
       subtitle: Text(entry.value['date'].toString() +
         ' • ' + (entry.value['topic'] ?? '').toString() +
@@ -141,7 +157,27 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       onChanged: (value) async {
         setState(() => tasks[entry.key]['done'] = value ?? false);
         await save();
-      }))),
+      }),
+      Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+        TextButton.icon(icon: const Icon(Icons.edit_outlined), label: const Text('ویرایش'), onPressed: () => setState(() {
+          editingTaskIndex = entry.key;
+          taskController.text = entry.value['title'].toString();
+          topicController.text = (entry.value['topic'] ?? '').toString();
+          selectedDate = DateTime.tryParse(entry.value['date'].toString()) ?? DateTime.now();
+          plannedMinutes = (entry.value['plannedMinutes'] as num?)?.toInt() ?? 60;
+          priority = (entry.value['priority'] as num?)?.toInt() ?? 2;
+          planFormVersion++;
+        })),
+        TextButton.icon(icon: const Icon(Icons.delete_outline), label: const Text('حذف'), onPressed: () async {
+          final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+            title: const Text('حذف تکلیف؟'), content: const Text('گزارش‌های مطالعه حذف نمی‌شوند.'), actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')),
+              TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
+          if (confirmed != true || !mounted) return;
+          setState(() { tasks.removeAt(entry.key); editingTaskIndex = null; linkedTaskIndex = null; completeLinkedTask = false; reportFormVersion++; });
+          await save();
+        }),
+      ])]))),
   ]);
   Widget report() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     heading('ثبت گزارش روزانه'),
