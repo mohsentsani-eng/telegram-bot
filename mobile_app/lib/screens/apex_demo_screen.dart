@@ -16,6 +16,8 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   final noteController = TextEditingController();
   int plannedMinutes = 60, priority = 2;
   int? linkedTaskIndex;
+  bool completeLinkedTask = false;
+  int reportFormVersion = 0;
   DateTime selectedDate = DateTime.now();
   String get selectedDay => selectedDate.toIso8601String().substring(0, 10);
   int tab = 0, minutes = 45, tests = 0, satisfaction = 7, mood = 3, stress = 3;
@@ -57,12 +59,16 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   Future<void> addReport() async {
     final name = subjectController.text.trim();
     if (name.isEmpty) return;
-    setState(() => reports.insert(0, {'subject': name, 'date': today, 'taskIndex': linkedTaskIndex,
+    final linked = linkedTaskIndex == null ? null : tasks[linkedTaskIndex!];
+    setState(() {
+      if (linked != null && completeLinkedTask) linked['done'] = true;
+      reports.insert(0, {'subject': name, 'date': today, 'linkedTitle': linked?['title'], 'linkedDate': linked?['date'],
       'minutes': minutes, 'tests': tests, 'satisfaction': satisfaction,
-      'mood': mood, 'stress': stress, 'note': noteController.text.trim()}));
+      'mood': mood, 'stress': stress, 'note': noteController.text.trim()});
+    });
     subjectController.clear();
     noteController.clear();
-    setState(() => linkedTaskIndex = null);
+    setState(() { linkedTaskIndex = null; completeLinkedTask = false; reportFormVersion++; });
     await save();
   }
   @override
@@ -131,6 +137,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     heading('ثبت گزارش روزانه'),
     if (tasks.isNotEmpty) DropdownButtonFormField<int>(
       isExpanded: true,
+      key: ValueKey(reportFormVersion),
       initialValue: linkedTaskIndex,
       decoration: const InputDecoration(labelText: 'اتصال گزارش به تکلیف برنامه'),
       items: [const DropdownMenuItem<int>(value: -1, child: Text('بدون اتصال')),
@@ -138,9 +145,14 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
           child: Text(e.value['title'].toString() + ' • ' + e.value['date'].toString(), overflow: TextOverflow.ellipsis)))],
       onChanged: (v) => setState(() {
         linkedTaskIndex = v == -1 ? null : v;
+        completeLinkedTask = false;
         if (linkedTaskIndex != null) subjectController.text = tasks[linkedTaskIndex!]['title'].toString();
       }),
     ),
+    if (linkedTaskIndex != null) CheckboxListTile(
+      title: const Text('این تکلیف را کامل انجام دادم'),
+      value: completeLinkedTask,
+      onChanged: (v) => setState(() => completeLinkedTask = v ?? false)),
     TextField(controller: subjectController, maxLength: 80,
       decoration: const InputDecoration(labelText: 'نام درس')),
     Text('مدت مطالعه: ' + minutes.toString() + ' دقیقه'),
@@ -186,6 +198,13 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     final recentTasks = tasks.where((t) => recentDates.contains(t['date'])).toList();
     final completed = recentTasks.where((t) => t['done'] == true).length;
     final planned = recentTasks.fold<int>(0, (n, t) => n + ((t['plannedMinutes'] as num?)?.toInt() ?? 0));
+    final bySubject = <String, int>{};
+    final testsBySubject = <String, int>{};
+    for (final r in reports.where((r) => recentDates.contains(r['date']))) {
+      final name = r['subject'].toString();
+      bySubject.update(name, (v) => v + (r['minutes'] as int), ifAbsent: () => r['minutes'] as int);
+      testsBySubject.update(name, (v) => v + (r['tests'] as int), ifAbsent: () => r['tests'] as int);
+    }
     final percent = recentTasks.isEmpty ? 0 : (100 * completed / recentTasks.length).round();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       heading('پیشرفت هفت روز گذشته'),
@@ -196,6 +215,13 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         trailing: Text(percent.toString() + '٪'))),
       Card(child: ListTile(title: const Text('زمان برنامه‌ریزی‌شده هفتگی'),
         trailing: Text(planned.toString() + ' دقیقه'))),
+      heading('عملکرد به تفکیک درس'),
+      if (bySubject.isEmpty) const Text('هنوز گزارشی در این هفته ثبت نشده است.'),
+      ...bySubject.entries.map((e) => Card(child: ListTile(
+        title: Text(e.key),
+        subtitle: Text('${testsBySubject[e.key]} تست'),
+        trailing: Text('${e.value} دقیقه')))),
+      heading('روند مطالعه روزانه'),
       ...days.map((d) => Padding(padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(children: [
           SizedBox(width: 60, child: Text(d.date.substring(5))),
@@ -206,6 +232,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   }
   Widget account() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     heading('حساب محلی'),
+    const Text('نسخه آزمایشی ۱۱ • تحلیل درس و تکمیل تکلیف'),
     const Card(child: ListTile(title: Text('Apex360 ترنم همدلی'),
       subtitle: Text('حساب آزمایشی؛ بدون اتصال به پرونده دانش‌آموز'))),
     Card(child: ListTile(title: const Text('تکالیف ذخیره‌شده'), trailing: Text(tasks.length.toString()))),
