@@ -91,8 +91,17 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     topicController.clear();
     await save();
   }
+  String canonicalSubject(String value) {
+    final name = value.trim().replaceAll('ي', 'ی').replaceAll('ك', 'ک');
+    return name == 'ریاضیات' ? 'ریاضی' : name;
+  }
+  void resetReport() {
+    editingReportIndex = null; linkedTaskIndex = null; completeLinkedTask = false;
+    subjectController.clear(); noteController.clear();
+    minutes = 45; tests = 0; satisfaction = 7; mood = 3; stress = 3; reportFormVersion++;
+  }
   Future<void> addReport() async {
-    final name = subjectController.text.trim();
+    final name = canonicalSubject(subjectController.text);
     if (name.isEmpty) return;
     final linked = linkedTaskIndex == null ? null : tasks[linkedTaskIndex!];
     setState(() {
@@ -106,7 +115,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     });
     subjectController.clear();
     noteController.clear();
-    setState(() { linkedTaskIndex = null; completeLinkedTask = false; reportFormVersion++; });
+    setState(resetReport);
     await save();
   }
   @override
@@ -220,7 +229,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         onChanged: (v) { final n = int.tryParse(v); if (n != null && n >= 0 && n <= 600) setState(() => plannedMinutes = n); },
       ))]),
     Slider(value: plannedMinutes.clamp(0, 240).toDouble(), min: 0, max: 240, divisions: 16,
-      onChanged: (v) => setState(() => plannedMinutes = v.round())),
+      onChanged: (v) => setState(() { plannedMinutes = v.round(); planFormVersion++; })),
     Text('اولویت: ' + (priority == 1 ? 'زیاد' : priority == 2 ? 'متوسط' : 'کم')),
     SegmentedButton<int>(segments: const [
       ButtonSegment(value: 1, label: Text('زیاد')),
@@ -307,10 +316,10 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         onChanged: (v) { final n = int.tryParse(v); if (n != null && n >= 0 && n <= 600) setState(() => minutes = n); },
       ))]),
     Slider(value: minutes.clamp(0, 180).toDouble(), min: 0, max: 180, divisions: 12,
-      onChanged: (value) => setState(() => minutes = value.round())),
-    Text('تعداد تست: ' + tests.toString()),
+      onChanged: (value) => setState(() { minutes = value.round(); reportFormVersion++; })),
+    TextFormField(key: ValueKey('tests-$reportFormVersion'), initialValue: tests.toString(), keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'تعداد تست (۰ تا ۱۰۰)'), onChanged: (v) { final n = int.tryParse(v); if (n != null && n >= 0 && n <= 100) setState(() => tests = n); }),
     Slider(value: tests.toDouble(), min: 0, max: 100, divisions: 100,
-      onChanged: (value) => setState(() => tests = value.round())),
+      onChanged: (value) => setState(() { tests = value.round(); reportFormVersion++; })),
     Text('رضایت از عملکرد: ' + satisfaction.toString() + ' از ۱۰'),
     Slider(value: satisfaction.toDouble(), min: 0, max: 10, divisions: 10,
       onChanged: (value) => setState(() => satisfaction = value.round())),
@@ -323,17 +332,21 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     TextField(controller: noteController, maxLines: 3, maxLength: 400,
       decoration: const InputDecoration(labelText: 'کارهای انجام‌نشده و علت آن / توضیحات')),
     FilledButton(onPressed: addReport, child: Text(editingReportIndex == null ? 'ذخیره گزارش روی گوشی' : 'ذخیره اصلاحات گزارش')),
-    if (editingReportIndex != null) TextButton(onPressed: () => setState(() { editingReportIndex = null; subjectController.clear(); noteController.clear(); linkedTaskIndex = null; completeLinkedTask = false; reportFormVersion++; }), child: const Text('انصراف از ویرایش گزارش')),
+    if (editingReportIndex != null) TextButton(onPressed: () => setState(resetReport), child: const Text('انصراف از ویرایش گزارش')),
     const SizedBox(height: 16),
     heading('گزارش‌های ثبت‌شده'),
     ...reports.asMap().entries.take(30).map((entry) { final r = entry.value; return Card(child: ListTile(
       title: Text(r['subject'].toString() + ' • ' + r['minutes'].toString() + ' دقیقه • ' + r['tests'].toString() + ' تست'),
       subtitle: Text(persianDate(r['date'].toString()) + ' | رضایت ' + r['satisfaction'].toString() + '/۱۰ | خلق ' + r['mood'].toString() + '/۵ | استرس ' + r['stress'].toString() + '/۵'),
-      trailing: IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'ویرایش گزارش', onPressed: () => setState(() {
+      trailing: Row(mainAxisSize: MainAxisSize.min, children: [IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'حذف گزارش', onPressed: () async {
+        final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('حذف گزارش؟'), content: const Text('این گزارش حذف می‌شود؛ وضعیت تکلیف تغییر نمی‌کند.'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')), TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
+        if (ok != true || !mounted) return;
+        setState(() { reports.removeAt(entry.key); resetReport(); }); await save();
+      }), IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'ویرایش گزارش', onPressed: () => setState(() {
         editingReportIndex = entry.key; subjectController.text = r['subject'].toString(); noteController.text = (r['note'] ?? '').toString();
         minutes = (r['minutes'] as num).toInt(); tests = (r['tests'] as num).toInt(); satisfaction = (r['satisfaction'] as num).toInt(); mood = (r['mood'] as num).toInt(); stress = (r['stress'] as num).toInt();
         linkedTaskIndex = null; completeLinkedTask = false; reportFormVersion++;
-      })))); }),
+      }))]))); }),
   ]);
   Widget progress() {
     final now = DateTime.now();
@@ -351,7 +364,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     final bySubject = <String, int>{};
     final testsBySubject = <String, int>{};
     for (final r in reports.where((r) => recentDates.contains(r['date']))) {
-      final name = r['subject'].toString();
+      final name = canonicalSubject(r['subject'].toString());
       bySubject.update(name, (v) => v + (r['minutes'] as int), ifAbsent: () => r['minutes'] as int);
       testsBySubject.update(name, (v) => v + (r['tests'] as int), ifAbsent: () => r['tests'] as int);
     }
@@ -361,8 +374,8 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       Card(child: ListTile(title: const Text('مجموع مطالعه هفتگی'),
         trailing: Text((total / 60).toStringAsFixed(1) + ' ساعت'))),
       Card(child: ListTile(title: const Text('پایبندی به برنامه هفتگی'),
-        subtitle: Text(completed.toString() + ' تکلیف از ' + recentTasks.length.toString()),
-        trailing: Text(percent.toString() + '٪'))),
+        subtitle: Text(recentTasks.isEmpty ? 'هنوز برنامه‌ای ثبت نشده' : completed.toString() + ' تکلیف از ' + recentTasks.length.toString()),
+        trailing: Text(recentTasks.isEmpty ? '—' : percent.toString() + '٪'))),
       Card(child: ListTile(title: const Text('زمان برنامه‌ریزی‌شده هفتگی'),
         trailing: Text(planned.toString() + ' دقیقه'))),
       heading('کیفیت عملکرد و حال عمومی'),
@@ -445,7 +458,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     OutlinedButton.icon(onPressed: restoreBackup, icon: const Icon(Icons.restore), label: const Text('بازیابی از متن کپی‌شده')),
     const Text('پشتیبان متنی رمزگذاری نشده است؛ آن را فقط در محل خصوصی نگه دارید.'),
 
-    const Text('نسخه آزمایشی ۱۱ • تحلیل درس و تکمیل تکلیف'),
+    const Text('نسخه آزمایشی ۱۲ • اصلاح گزارش و تحلیل درس'),
     const Card(child: ListTile(title: Text('پروفایل دانش‌آموز'),
       subtitle: Text('مشخصات محلی؛ بدون اتصال به پرونده آنلاین'))),
     TextField(controller: nameController, maxLength: 80, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی')),
