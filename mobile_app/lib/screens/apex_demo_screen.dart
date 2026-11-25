@@ -120,14 +120,36 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     final total = currentReports.fold<int>(0, (sum, r) => sum + (r['minutes'] as int));
     final count = currentReports.fold<int>(0, (sum, r) => sum + (r['tests'] as int));
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Container(
+        padding: const EdgeInsets.all(18),
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(colors: [Color(0xFF174C75), Color(0xFF167D82)]),
+          borderRadius: BorderRadius.circular(22)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('مسیر پیشرفت من', style: TextStyle(color: Colors.white70, fontSize: 14)),
+          const SizedBox(height: 8),
+          Text(studentName.isEmpty ? 'به Apex360 خوش آمدی' : 'سلام، $studentName', style: const TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Text(persianDate(today), style: const TextStyle(color: Colors.white)),
+          const SizedBox(height: 12),
+          LinearProgressIndicator(value: current.isEmpty ? 0 : done / current.length, color: Colors.white, backgroundColor: Colors.white24),
+          const SizedBox(height: 8),
+          Text('امروز $done از ${current.length} تکلیف انجام شده', style: const TextStyle(color: Colors.white)),
+        ])),
+      if (studentName.isEmpty || studentGrade.isEmpty)
+        Card(child: ListTile(leading: const Icon(Icons.person_add_alt_1), title: const Text('تکمیل پروفایل دانش‌آموز'), subtitle: const Text('نام و پایه تحصیلی خود را ثبت کن.'), onTap: () => setState(() => tab = 4))),
       heading(studentName.isEmpty ? 'سلام! امروز چه قدمی برای پیشرفتت برداشتی؟ 🌱' : 'سلام $studentName! امروز چه قدمی برای پیشرفتت برداشتی؟ 🌱'),
       Card(child: ListTile(title: const Text('اجرای برنامه امروز'),
         subtitle: LinearProgressIndicator(value: current.isEmpty ? 0 : done / current.length),
         trailing: Text(done.toString() + ' از ' + current.length.toString()))),
       Card(child: ListTile(title: const Text('مطالعه امروز'), trailing: Text(total.toString() + ' دقیقه'))),
       Card(child: ListTile(title: const Text('تست‌های امروز'), trailing: Text(count.toString() + ' تست'))),
-      FilledButton(onPressed: () => setState(() => tab = 1), child: const Text('برنامه‌ریزی امروز')),
-      OutlinedButton(onPressed: () => setState(() => tab = 3), child: const Text('ثبت گزارش مطالعه')),
+      FilledButton.icon(onPressed: () => setState(() { selectedDate = DateTime.now(); filterDay = today; tab = 1; }), icon: const Icon(Icons.calendar_today), label: const Text('برنامه‌ریزی امروز')),
+      OutlinedButton.icon(onPressed: () => setState(() => tab = 3), icon: const Icon(Icons.edit_note), label: const Text('ثبت گزارش مطالعه')),
+      heading('تکالیف امروز'),
+      if (current.isEmpty) const Text('هنوز تکلیفی برای امروز ثبت نشده است.'),
+      ...current.map((t) => Card(child: CheckboxListTile(title: Text(t['title'].toString()), subtitle: Text('${t["plannedMinutes"] ?? 0} دقیقه'), value: t['done'] == true, onChanged: (v) async { setState(() => t['done'] = v ?? false); await save(); }))),
     ]);
   }
   Future<DateTime?> pickJalaliDate() async {
