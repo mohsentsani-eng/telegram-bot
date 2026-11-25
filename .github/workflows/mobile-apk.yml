@@ -63,8 +63,8 @@ jobs:
           signature="$("$APKSIGNER" verify --verbose --print-certs build/app/outputs/flutter-apk/app-debug.apk)"
           printf '%s\n' "$signature"
           expected="$(sha256sum "$RUNNER_TEMP/apex360-signer.der" | cut -d ' ' -f 1)"
-          actual="$(printf '%s\n' "$signature" | sed -n 's/^Signer #[0-9][0-9]* certificate SHA-256 digest: //p')"
-          if [ "$actual" != "$expected" ]; then
+          actual="$(printf '%s\n' "$signature" | sed -nE 's/^.*Signer.*certificate SHA-256 digest: ([[:xdigit:]]{64})$/\1/p' | tr '[:upper:]' '[:lower:]' | sort -u)"
+          if ! printf '%s\n' "$signature" | grep -Fxq 'Number of signers: 1' || [ "$actual" != "$expected" ]; then
             echo "::error::APK signer does not match the configured Apex360 certificate."
             exit 1
           fi
