@@ -6,11 +6,6 @@ on:
     paths:
       - 'mobile_app/**'
       - '.github/workflows/mobile-apk.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'mobile_app/**'
-      - '.github/workflows/mobile-apk.yml'
   workflow_dispatch:
 
 permissions:
@@ -18,6 +13,10 @@ permissions:
 
 jobs:
   android-apk:
+    if: github.ref == 'refs/heads/feature/mobile-app-foundation'
+    environment:
+      name: apex360-android-signing
+      deployment: false
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -42,19 +41,18 @@ jobs:
       - name: Analyze Dart code
         working-directory: mobile_app
         run: flutter analyze --no-fatal-infos
-      - name: Configure stable signing when secret is available
-        if: github.ref == 'refs/heads/feature/mobile-app-foundation'
+      - name: Configure stable debug signing
         env:
           APEX_KEYSTORE: ${{ secrets.APEX360_DEBUG_KEYSTORE_BASE64 }}
         run: |
           if [ -z "$APEX_KEYSTORE" ]; then
-            echo "::warning::Stable signing secret missing; this APK is a test build only."
-            exit 0
+            echo "::error::APEX360_DEBUG_KEYSTORE_BASE64 is required for signing."
+            exit 1
           fi
           umask 077
           mkdir -p "$HOME/.android"
           printf '%s' "$APEX_KEYSTORE" | base64 --decode > "$HOME/.android/debug.keystore"
-          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
+          keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file "$RUNNER_TEMP/apex360-signer.der"
       - name: Build installable test APK
         working-directory: mobile_app
         run: flutter build apk --debug --build-name=0.11.0 --build-number="${{ github.run_number }}" --dart-define=APEX_DEMO_MODE=true
@@ -62,7 +60,17 @@ jobs:
         working-directory: mobile_app
         run: |
           APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort -V | tail -1)"
-          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-debug.apk
+          signature="$("$APKSIGNER" verify --verbose --print-certs build/app/outputs/flutter-apk/app-debug.apk)"
+          printf '%s\n' "$signature"
+          expected="$(sha256sum "$RUNNER_TEMP/apex360-signer.der" | cut -d ' ' -f 1)"
+          actual="$(printf '%s\n' "$signature" | sed -n 's/^Signer #[0-9][0-9]* certificate SHA-256 digest: //p')"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::APK signer does not match the configured Apex360 certificate."
+            exit 1
+          fi
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$HOME/.android/debug.keystore" "$RUNNER_TEMP/apex360-signer.der"
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
