@@ -130,6 +130,54 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       OutlinedButton(onPressed: () => setState(() => tab = 3), child: const Text('ثبت گزارش مطالعه')),
     ]);
   }
+  Future<DateTime?> pickJalaliDate() async {
+    final initial = Jalali.fromDateTime(selectedDate);
+    int year = initial.year, month = initial.month, day = initial.day;
+    const months = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+    const weekdays = ['ش','ی','د','س','چ','پ','ج'];
+    return showDialog<DateTime>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) {
+      final first = Jalali(year, month, 1);
+      final count = first.monthLength;
+      final offset = (first.toDateTime().weekday + 1) % 7;
+      void move(int delta) {
+        final next = month + delta;
+        final y = next == 0 ? year - 1 : next == 13 ? year + 1 : year;
+        if (y < 1402 || y > 1415) return;
+        refresh(() {
+          year = y; month = next == 0 ? 12 : next == 13 ? 1 : next;
+          day = day.clamp(1, Jalali(year, month, 1).monthLength).toInt();
+        });
+      }
+      return AlertDialog(
+        title: const Text('انتخاب تاریخ شمسی'),
+        content: SizedBox(width: 320, child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            IconButton(onPressed: () => move(-1), icon: const Icon(Icons.chevron_right), tooltip: 'ماه قبل'),
+            Text('${months[month - 1]} $year'),
+            IconButton(onPressed: () => move(1), icon: const Icon(Icons.chevron_left), tooltip: 'ماه بعد'),
+          ]),
+          Row(children: weekdays.map((w) => Expanded(child: Center(child: Text(w)))).toList()),
+          GridView.builder(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7),
+            itemCount: offset + count,
+            itemBuilder: (context, i) {
+              final d = i - offset + 1;
+              if (d < 1) return const SizedBox.shrink();
+              return InkWell(onTap: () => refresh(() => day = d),
+                child: Center(child: CircleAvatar(radius: 15,
+                  backgroundColor: day == d ? Theme.of(context).colorScheme.primary : Colors.transparent,
+                  foregroundColor: day == d ? Theme.of(context).colorScheme.onPrimary : Theme.of(context).colorScheme.onSurface,
+                  child: Text('$d'))));
+            }),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
+          TextButton(onPressed: () => Navigator.pop(ctx, DateTime.now()), child: const Text('امروز')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, Jalali(year, month, day).toDateTime()), child: const Text('تأیید')),
+        ],
+      );
+    }));
+  }
   Widget plan() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     heading('برنامه مطالعاتی روزانه'),
     TextField(controller: taskController, maxLength: 100,
@@ -137,9 +185,8 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     TextField(controller: topicController, maxLength: 100,
       decoration: const InputDecoration(labelText: 'مبحث یا نوع فعالیت', hintText: 'مثلاً تست فصل دوم')),
     OutlinedButton.icon(onPressed: () async {
-      final picked = await showDatePicker(context: context, initialDate: selectedDate,
-        firstDate: DateTime(2024), lastDate: DateTime(2035));
-      if (picked != null) setState(() => selectedDate = picked);
+      final picked = await pickJalaliDate();
+      if (picked != null && mounted) setState(() => selectedDate = picked);
     }, icon: const Icon(Icons.event), label: Text('تاریخ برنامه: ' + persianDate(selectedDay))),
     Text('زمان پیش‌بینی‌شده: ' + plannedMinutes.toString() + ' دقیقه'),
     Row(children: [const Text('ورود دقیق (دقیقه): '),
