@@ -452,6 +452,15 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('بازیابی ناموفق بود؛ نسخه پشتیبان معتبر را کپی کنید.')));
     }
   }
+  static const grades = ['اول','دوم','سوم','چهارم','پنجم','ششم','هفتم','هشتم','نهم','دهم','یازدهم','دوازدهم'];
+  static const tracks = ['ریاضی','تجربی','انسانی','معارف','فنی‌وحرفه‌ای','کاردانش','سایر'];
+  String normalizedGrade(String value) {
+    var v = value.trim();
+    for (var i = 0; i < 10; i++) { v = v.replaceAll('۰۱۲۳۴۵۶۷۸۹'[i], '$i'); }
+    final n = int.tryParse(v);
+    return n != null && n >= 1 && n <= 12 ? grades[n-1] : v;
+  }
+  bool get profileComplete => studentName.trim().isNotEmpty && grades.contains(normalizedGrade(studentGrade)) && (!grades.skip(9).contains(normalizedGrade(studentGrade)) || tracks.contains(studentTrack));
   Widget account() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     heading('حساب محلی'),
     OutlinedButton.icon(onPressed: exportBackup, icon: const Icon(Icons.backup_outlined), label: const Text('کپی نسخه پشتیبان')),
@@ -462,14 +471,14 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     const Card(child: ListTile(title: Text('پروفایل دانش‌آموز'),
       subtitle: Text('مشخصات محلی؛ بدون اتصال به پرونده آنلاین'))),
     TextField(controller: nameController, maxLength: 80, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی')),
-    TextField(controller: gradeController, maxLength: 30, decoration: const InputDecoration(labelText: 'پایه تحصیلی')),
-    TextField(controller: trackController, maxLength: 40, decoration: const InputDecoration(labelText: 'رشته تحصیلی (در صورت وجود)')),
+    DropdownButtonFormField<String>(key: ValueKey('grade-$studentGrade'), initialValue: grades.contains(normalizedGrade(gradeController.text)) ? normalizedGrade(gradeController.text) : null, decoration: const InputDecoration(labelText: 'پایه تحصیلی'), items: grades.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setState(() { gradeController.text = v ?? ''; if (!grades.skip(9).contains(v)) trackController.clear(); })),
+    if (grades.skip(9).contains(normalizedGrade(gradeController.text))) DropdownButtonFormField<String>(key: ValueKey('track-$studentTrack'), initialValue: tracks.contains(trackController.text) ? trackController.text : null, decoration: const InputDecoration(labelText: 'رشته تحصیلی'), items: tracks.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setState(() => trackController.text = v ?? '')),
     FilledButton(onPressed: () async {
-      if (nameController.text.trim().isEmpty || gradeController.text.trim().isEmpty) {
+      if (nameController.text.trim().isEmpty || !grades.contains(normalizedGrade(gradeController.text)) || (grades.skip(9).contains(normalizedGrade(gradeController.text)) && !tracks.contains(trackController.text))) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('نام و پایه تحصیلی را وارد کنید.')));
         return;
       }
-      setState(() { studentName = nameController.text.trim(); studentGrade = gradeController.text.trim(); studentTrack = trackController.text.trim(); });
+      setState(() { studentName = nameController.text.trim(); studentGrade = normalizedGrade(gradeController.text); studentTrack = grades.skip(9).contains(studentGrade) ? trackController.text.trim() : ''; tab = 0; });
       await save();
     }, child: const Text('ذخیره مشخصات روی گوشی')),
     Card(child: ListTile(title: const Text('تکالیف ذخیره‌شده'), trailing: Text(tasks.length.toString()))),
@@ -486,13 +495,14 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
             child: const Text('نسخه آفلاین آزمایشی • داده‌ها فقط روی گوشی ذخیره می‌شوند و به ربات یا مشاور ارسال نمی‌شوند. حذف برنامه ممکن است اطلاعات را پاک کند.',
               style: TextStyle(fontSize: 12, height: 1.8))),
           const SizedBox(height: 18),
-          if (tab == 0) home(),
-          if (tab == 1) plan(),
-          if (tab == 2) progress(),
-          if (tab == 3) report(),
-          if (tab == 4) account(),
+          if (!profileComplete) ...[heading('ابتدا پروفایل خود را تکمیل کنید'), account()],
+          if (profileComplete && tab == 0) home(),
+          if (profileComplete && tab == 1) plan(),
+          if (profileComplete && tab == 2) progress(),
+          if (profileComplete && tab == 3) report(),
+          if (profileComplete && tab == 4) account(),
         ])),
-      bottomNavigationBar: NavigationBar(selectedIndex: tab,
+      bottomNavigationBar: !ready || !profileComplete ? null : NavigationBar(selectedIndex: tab,
         onDestinationSelected: (v) => setState(() => tab = v),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home_outlined), label: 'خانه'),
