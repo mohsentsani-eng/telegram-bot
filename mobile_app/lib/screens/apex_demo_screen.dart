@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Offline-only workspace; does not contact the production bot or API.
@@ -314,8 +315,54 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         ]))),
     ]);
   }
+  Future<void> exportBackup() async {
+    final payload = jsonEncode({'format': 'apex360-backup-v1', 'tasks': tasks, 'reports': reports, 'studentName': studentName, 'studentGrade': studentGrade, 'studentTrack': studentTrack});
+    await Clipboard.setData(ClipboardData(text: payload));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('نسخه پشتیبان کپی شد. آن را در محلی خصوصی ذخیره کنید؛ شامل اطلاعات شخصی است.')));
+  }
+  Future<void> restoreBackup() async {
+    final clip = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted) return;
+    try {
+      final raw = clip?.text ?? '';
+      if (raw.length > 5000000) throw const FormatException();
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      if (data['format'] != 'apex360-backup-v1') throw const FormatException();
+      final newTasks = (data['tasks'] as List).map((v) => Map<String, dynamic>.from(v as Map)).toList();
+      final newReports = (data['reports'] as List).map((v) => Map<String, dynamic>.from(v as Map)).toList();
+      for (final t in newTasks) {
+        if (t['title'] is! String || t['date'] is! String || DateTime.tryParse(t['date'] as String) == null || t['done'] is! bool) throw const FormatException();
+      }
+      for (final r in newReports) {
+        if (r['subject'] is! String || r['date'] is! String || DateTime.tryParse(r['date'] as String) == null) throw const FormatException();
+        for (final key in ['minutes','tests','satisfaction','mood','stress']) {
+          if (r[key] is! int) throw const FormatException();
+        }
+        if ((r['minutes'] as int) < 0 || (r['minutes'] as int) > 600 || (r['tests'] as int) < 0 || (r['tests'] as int) > 100 || (r['satisfaction'] as int) < 0 || (r['satisfaction'] as int) > 10 || (r['mood'] as int) < 1 || (r['mood'] as int) > 5 || (r['stress'] as int) < 1 || (r['stress'] as int) > 5) throw const FormatException();
+      }
+      final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('بازیابی اطلاعات؟'), content: Text('این نسخه شامل ${newTasks.length} تکلیف و ${newReports.length} گزارش است. اطلاعات فعلی جایگزین می‌شوند. ابتدا از اطلاعات فعلی پشتیبان بگیرید.'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')), TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('بازیابی'))]));
+      if (confirmed != true || !mounted) return;
+      final prefs = await SharedPreferences.getInstance();
+      final payload = jsonEncode({'tasks': newTasks, 'reports': newReports, 'studentName': data['studentName']?.toString() ?? '', 'studentGrade': data['studentGrade']?.toString() ?? '', 'studentTrack': data['studentTrack']?.toString() ?? ''});
+      if (!await prefs.setString(storageKey, payload)) throw const FormatException();
+      if (!mounted) return;
+      setState(() {
+        tasks = newTasks; reports = newReports;
+        studentName = data['studentName']?.toString() ?? ''; studentGrade = data['studentGrade']?.toString() ?? ''; studentTrack = data['studentTrack']?.toString() ?? '';
+        nameController.text = studentName; gradeController.text = studentGrade; trackController.text = studentTrack;
+        editingTaskIndex = null; editingReportIndex = null; linkedTaskIndex = null; completeLinkedTask = false; reportFormVersion++; planFormVersion++;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اطلاعات بازیابی شد.')));
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('بازیابی ناموفق بود؛ نسخه پشتیبان معتبر را کپی کنید.')));
+    }
+  }
   Widget account() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     heading('حساب محلی'),
+    OutlinedButton.icon(onPressed: exportBackup, icon: const Icon(Icons.backup_outlined), label: const Text('کپی نسخه پشتیبان')),
+    OutlinedButton.icon(onPressed: restoreBackup, icon: const Icon(Icons.restore), label: const Text('بازیابی از متن کپی‌شده')),
+    const Text('پشتیبان متنی رمزگذاری نشده است؛ آن را فقط در محل خصوصی نگه دارید.'),
+
     const Text('نسخه آزمایشی ۱۱ • تحلیل درس و تکمیل تکلیف'),
     const Card(child: ListTile(title: Text('پروفایل دانش‌آموز'),
       subtitle: Text('مشخصات محلی؛ بدون اتصال به پرونده آنلاین'))),
