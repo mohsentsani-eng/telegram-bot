@@ -146,11 +146,11 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
           const SizedBox(height: 12),
           LinearProgressIndicator(value: current.isEmpty ? 0 : done / current.length, color: Colors.white, backgroundColor: Colors.white24),
           const SizedBox(height: 8),
-          Text('امروز $done از ${current.length} تکلیف انجام شده', style: const TextStyle(color: Colors.white)),
+          Text(current.isEmpty ? 'هنوز برنامه امروز ثبت نشده است' : 'امروز $done از ${current.length} تکلیف انجام شده', style: const TextStyle(color: Colors.white)),
         ])),
       if (studentName.isEmpty || studentGrade.isEmpty)
         Card(child: ListTile(leading: const Icon(Icons.person_add_alt_1), title: const Text('تکمیل پروفایل دانش‌آموز'), subtitle: const Text('نام و پایه تحصیلی خود را ثبت کن.'), onTap: () => setState(() => tab = 4))),
-      heading(studentName.isEmpty ? 'سلام! امروز چه قدمی برای پیشرفتت برداشتی؟ 🌱' : 'سلام $studentName! امروز چه قدمی برای پیشرفتت برداشتی؟ 🌱'),
+      heading('خلاصه عملکرد امروز'),
       Card(child: ListTile(title: const Text('اجرای برنامه امروز'),
         subtitle: LinearProgressIndicator(value: current.isEmpty ? 0 : done / current.length),
         trailing: Text(done.toString() + ' از ' + current.length.toString()))),
@@ -223,7 +223,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       _ => <String>[],
     }];
   }
-  Widget subjectSuggestions(TextEditingController controller) => Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Wrap(spacing: 6, runSpacing: 4, children: subjectChoices.map((name) => ActionChip(label: Text(name), onPressed: () => setState(() => controller.text = name))).toList()));
+  Widget subjectSuggestions(TextEditingController controller) => ExpansionTile(tilePadding: EdgeInsets.zero, title: const Text('انتخاب سریع درس'), children: [Wrap(spacing: 6, runSpacing: 4, children: subjectChoices.map((name) => ActionChip(label: Text(name), onPressed: () => setState(() => controller.text = name))).toList())]);
   Widget plan() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     heading('برنامه مطالعاتی روزانه'),
     subjectSuggestions(taskController),
@@ -460,6 +460,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       if (!await prefs.setString(storageKey, payload)) throw const FormatException();
       if (!mounted) return;
       setState(() {
+        resetReport(); taskController.clear(); topicController.clear(); filterDay = null;
         tasks = newTasks; reports = newReports;
         studentName = data['studentName']?.toString() ?? ''; studentGrade = data['studentGrade']?.toString() ?? ''; studentTrack = data['studentTrack']?.toString() ?? '';
         nameController.text = studentName; gradeController.text = studentGrade; trackController.text = studentTrack;
@@ -507,12 +508,12 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     child: Scaffold(
       appBar: AppBar(title: const Text('Apex360 | ترنم همدلی')),
       body: loadFailed ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [const Text('خواندن اطلاعات ناموفق بود. برای حفاظت از داده‌ها ثبت جدید متوقف شده است.'), OutlinedButton(onPressed: () { setState(() => loadFailed = false); load(); }, child: const Text('تلاش مجدد'))]))) : !ready ? const Center(child: CircularProgressIndicator()) :
-        SafeArea(child: ListView(padding: const EdgeInsets.all(18), children: [
-          Container(padding: const EdgeInsets.all(12),
+        SafeArea(child: ListView(key: ValueKey(tab), padding: const EdgeInsets.all(14), children: [
+          if (!profileComplete || tab == 4) Container(padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(color: const Color(0xFFE8F0FF), borderRadius: BorderRadius.circular(14)),
             child: const Text('نسخه آفلاین آزمایشی • داده‌ها فقط روی گوشی ذخیره می‌شوند و به ربات یا مشاور ارسال نمی‌شوند. حذف برنامه ممکن است اطلاعات را پاک کند.',
               style: TextStyle(fontSize: 12, height: 1.8))),
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
           if (!profileComplete) ...[heading('ابتدا پروفایل خود را تکمیل کنید'), account()],
           if (profileComplete && tab == 0) home(),
           if (profileComplete && tab == 1) plan(),
