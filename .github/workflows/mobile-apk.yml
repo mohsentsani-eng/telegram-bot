@@ -55,7 +55,7 @@ jobs:
           keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file "$RUNNER_TEMP/apex360-signer.der"
       - name: Build installable test APK
         working-directory: mobile_app
-        run: flutter build apk --debug --build-name=0.11.0 --build-number="${{ github.run_number }}" --dart-define=APEX_DEMO_MODE=true
+        run: flutter build apk --debug --build-name=0.12.0 --build-number="${{ github.run_number }}" --dart-define=APEX_DEMO_MODE=true
       - name: Verify APK signature
         working-directory: mobile_app
         run: |
