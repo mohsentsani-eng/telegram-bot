@@ -1,4 +1,8 @@
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:math';
+import 'package:cryptography/cryptography.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -434,11 +438,57 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     }
     try {
       final data = jsonDecode(raw) as Map<String, dynamic>;
-      await Clipboard.setData(ClipboardData(text: jsonEncode({...data, 'format': 'apex360-backup-v1'})));
-      if (!mounted) return;
-      await restoreBackup();
+      await restoreBackup(suppliedRaw: jsonEncode({...data, 'format': 'apex360-backup-v1'}));
     } catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('خواندن نسخه قبلی ناموفق بود.')));
+    }
+  }
+  Future<String?> backupPassword(bool creating) async {
+    String password = '';
+    return showDialog<String>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) => AlertDialog(
+      title: Text(creating ? 'رمز نسخه پشتیبان' : 'رمز بازیابی'),
+      content: TextField(obscureText: true, autocorrect: false, enableSuggestions: false,
+        decoration: const InputDecoration(labelText: 'رمز (حداقل ۱۲ نویسه)'),
+        onChanged: (v) => refresh(() => password = v)),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
+        FilledButton(onPressed: password.length < 12 ? null : () => Navigator.pop(ctx, password), child: const Text('ادامه'))])));
+  }
+  Future<SecretKey> backupKey(String password, List<int> salt) => Pbkdf2(macAlgorithm: Hmac.sha256(), iterations: 600000, bits: 256).deriveKey(secretKey: SecretKey(utf8.encode(password)), nonce: salt);
+  Future<void> encryptedBackup() async {
+    final password = await backupPassword(true);
+    if (password == null || !mounted) return;
+    try {
+      final random = Random.secure();
+      final salt = List<int>.generate(16, (_) => random.nextInt(256));
+      final key = await backupKey(password, salt);
+      final payload = jsonEncode({'format': 'apex360-backup-v1', 'tasks': tasks, 'reports': reports, 'studentName': studentName, 'studentGrade': studentGrade, 'studentTrack': studentTrack});
+      final box = await AesGcm.with256bits().encrypt(utf8.encode(payload), secretKey: key);
+      final bytes = Uint8List.fromList(utf8.encode(jsonEncode({'format': 'apex360-encrypted-v1', 'salt': base64Encode(salt), 'nonce': base64Encode(box.nonce), 'cipher': base64Encode(box.cipherText), 'mac': base64Encode(box.mac.bytes)})));
+      final result = await FilePicker.platform.saveFile(dialogTitle: 'ذخیره پشتیبان رمزگذاری‌شده', fileName: 'apex360-$today.apexbackup', bytes: bytes);
+      if (result != null && mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('پشتیبان ذخیره شد. رمز را در محل امن نگه دارید.')));
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ذخیره پشتیبان ناموفق بود.')));
+    }
+  }
+  Future<void> importEncryptedBackup() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(withData: true, allowMultiple: false);
+      if (result == null || !mounted) return;
+      final bytes = result.files.single.bytes;
+      if (bytes == null || bytes.length > 8000000) throw const FormatException();
+      final data = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      if (data['format'] != 'apex360-encrypted-v1') throw const FormatException();
+      final salt = base64Decode(data['salt'] as String);
+      final nonce = base64Decode(data['nonce'] as String);
+      final mac = base64Decode(data['mac'] as String);
+      if (salt.length != 16 || nonce.length != 12 || mac.length != 16) throw const FormatException();
+      final password = await backupPassword(false);
+      if (password == null || !mounted) return;
+      final key = await backupKey(password, salt);
+      final plain = await AesGcm.with256bits().decrypt(SecretBox(base64Decode(data['cipher'] as String), nonce: nonce, mac: Mac(mac)), secretKey: key);
+      if (mounted) await restoreBackup(suppliedRaw: utf8.decode(plain));
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('رمز نادرست یا فایل پشتیبان نامعتبر است.')));
     }
   }
   Future<void> exportBackup() async {
@@ -452,11 +502,11 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     await Clipboard.setData(ClipboardData(text: payload));
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('نسخه پشتیبان کپی شد. آن را در محلی خصوصی ذخیره کنید؛ شامل اطلاعات شخصی است.')));
   }
-  Future<void> restoreBackup() async {
-    final clip = await Clipboard.getData(Clipboard.kTextPlain);
+  Future<void> restoreBackup({String? suppliedRaw}) async {
+    final clip = suppliedRaw == null ? await Clipboard.getData(Clipboard.kTextPlain) : null;
     if (!mounted) return;
     try {
-      final raw = clip?.text ?? '';
+      final raw = suppliedRaw ?? clip?.text ?? '';
       if (raw.length > 5000000) throw const FormatException();
       final data = jsonDecode(raw) as Map<String, dynamic>;
       if (data['format'] != 'apex360-backup-v1') throw const FormatException();
@@ -509,6 +559,9 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   bool get profileComplete => studentName.trim().isNotEmpty && grades.contains(normalizedGrade(studentGrade)) && (!grades.skip(9).contains(normalizedGrade(studentGrade)) || tracks.contains(studentTrack));
   Widget account() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     heading('حساب محلی'),
+    FilledButton.icon(onPressed: encryptedBackup, icon: const Icon(Icons.lock_outline), label: const Text('ذخیره فایل پشتیبان رمزدار')),
+    OutlinedButton.icon(onPressed: importEncryptedBackup, icon: const Icon(Icons.folder_open), label: const Text('بازیابی فایل رمزدار')),
+    const Text('رمز پشتیبان را فراموش نکنید؛ بدون آن بازیابی ممکن نیست.'),
     OutlinedButton.icon(onPressed: exportBackup, icon: const Icon(Icons.backup_outlined), label: const Text('کپی نسخه پشتیبان')),
     OutlinedButton.icon(onPressed: restoreBackup, icon: const Icon(Icons.restore), label: const Text('بازیابی از متن کپی‌شده')),
     TextButton.icon(onPressed: recoverPreviousBackup, icon: const Icon(Icons.undo), label: const Text('بازگردانی اطلاعات قبل از آخرین بازیابی')),
