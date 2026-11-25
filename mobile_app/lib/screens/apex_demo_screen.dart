@@ -28,6 +28,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   String get selectedDay => selectedDate.toIso8601String().substring(0, 10);
   int tab = 0, minutes = 45, tests = 0, satisfaction = 7, mood = 3, stress = 3;
   bool ready = false;
+  bool loadFailed = false;
   final nameController = TextEditingController();
   final gradeController = TextEditingController();
   final trackController = TextEditingController();
@@ -60,6 +61,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       }
       if (mounted) setState(() => ready = true);
     } catch (_) {
+      if (mounted) setState(() => loadFailed = true);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('خواندن داده‌ها ممکن نشد. برای حفاظت از اطلاعات، ثبت غیرفعال است.')));
     }
@@ -407,6 +409,8 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       final newTasks = (data['tasks'] as List).map((v) => Map<String, dynamic>.from(v as Map)).toList();
       final newReports = (data['reports'] as List).map((v) => Map<String, dynamic>.from(v as Map)).toList();
       for (final t in newTasks) {
+        if (t['plannedMinutes'] != null && (t['plannedMinutes'] is! int || (t['plannedMinutes'] as int) < 0 || (t['plannedMinutes'] as int) > 600)) throw const FormatException();
+        if (t['priority'] != null && ![1, 2, 3].contains(t['priority'])) throw const FormatException();
         if (t['title'] is! String || t['date'] is! String || DateTime.tryParse(t['date'] as String) == null || t['done'] is! bool) throw const FormatException();
       }
       for (final r in newReports) {
@@ -419,6 +423,8 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('بازیابی اطلاعات؟'), content: Text('این نسخه شامل ${newTasks.length} تکلیف و ${newReports.length} گزارش است. اطلاعات فعلی جایگزین می‌شوند. ابتدا از اطلاعات فعلی پشتیبان بگیرید.'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')), TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('بازیابی'))]));
       if (confirmed != true || !mounted) return;
       final prefs = await SharedPreferences.getInstance();
+      final previousRaw = prefs.getString(storageKey);
+      if (previousRaw != null && !await prefs.setString('${storageKey}_before_restore', previousRaw)) throw const FormatException();
       final payload = jsonEncode({'tasks': newTasks, 'reports': newReports, 'studentName': data['studentName']?.toString() ?? '', 'studentGrade': data['studentGrade']?.toString() ?? '', 'studentTrack': data['studentTrack']?.toString() ?? ''});
       if (!await prefs.setString(storageKey, payload)) throw const FormatException();
       if (!mounted) return;
@@ -460,7 +466,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   Widget build(BuildContext context) => Directionality(textDirection: TextDirection.rtl,
     child: Scaffold(
       appBar: AppBar(title: const Text('Apex360 | ترنم همدلی')),
-      body: !ready ? const Center(child: CircularProgressIndicator()) :
+      body: loadFailed ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [const Text('خواندن اطلاعات ناموفق بود. برای حفاظت از داده‌ها ثبت جدید متوقف شده است.'), OutlinedButton(onPressed: () { setState(() => loadFailed = false); load(); }, child: const Text('تلاش مجدد'))]))) : !ready ? const Center(child: CircularProgressIndicator()) :
         SafeArea(child: ListView(padding: const EdgeInsets.all(18), children: [
           Container(padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(color: const Color(0xFFE8F0FF), borderRadius: BorderRadius.circular(14)),
