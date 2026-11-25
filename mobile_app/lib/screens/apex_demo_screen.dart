@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:shamsi_date/shamsi_date.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -32,6 +33,12 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   final trackController = TextEditingController();
   String studentName = '', studentGrade = '', studentTrack = '';
   List<Map<String, dynamic>> tasks = [], reports = [];
+  String persianDate(String raw) {
+    final date = DateTime.tryParse(raw);
+    if (date == null) return raw;
+    final j = Jalali.fromDateTime(date);
+    return '${j.year}/${j.month.toString().padLeft(2, '0')}/${j.day.toString().padLeft(2, '0')}';
+  }
   String get today => DateTime.now().toIso8601String().substring(0, 10);
 
   @override
@@ -133,7 +140,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       final picked = await showDatePicker(context: context, initialDate: selectedDate,
         firstDate: DateTime(2024), lastDate: DateTime(2035));
       if (picked != null) setState(() => selectedDate = picked);
-    }, icon: const Icon(Icons.event), label: Text('تاریخ برنامه: ' + selectedDay)),
+    }, icon: const Icon(Icons.event), label: Text('تاریخ برنامه: ' + persianDate(selectedDay))),
     Text('زمان پیش‌بینی‌شده: ' + plannedMinutes.toString() + ' دقیقه'),
     Row(children: [const Text('ورود دقیق (دقیقه): '),
       Expanded(child: TextFormField(key: ValueKey(planFormVersion), initialValue: plannedMinutes.toString(),
@@ -170,7 +177,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     if (!tasks.any((t) => filterDay == null || t['date'] == filterDay)) const Text('برای این بازه تکلیفی ثبت نشده است.'),
     ...tasks.asMap().entries.where((entry) => filterDay == null || entry.value['date'] == filterDay).map((entry) => Card(child: Column(children: [CheckboxListTile(
       title: Text(entry.value['title'] as String),
-      subtitle: Text(entry.value['date'].toString() +
+      subtitle: Text(persianDate(entry.value['date'].toString()) +
         ' • ' + (entry.value['topic'] ?? '').toString() +
         ' • ' + (entry.value['plannedMinutes'] ?? 'نامشخص').toString() + ' دقیقه'),
       value: entry.value['done'] == true,
@@ -208,7 +215,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       decoration: const InputDecoration(labelText: 'اتصال گزارش به تکلیف برنامه'),
       items: [const DropdownMenuItem<int>(value: -1, child: Text('بدون اتصال')),
         ...tasks.asMap().entries.map((e) => DropdownMenuItem<int>(value: e.key,
-          child: Text(e.value['title'].toString() + ' • ' + e.value['date'].toString(), overflow: TextOverflow.ellipsis)))],
+          child: Text(e.value['title'].toString() + ' • ' + persianDate(e.value['date'].toString()), overflow: TextOverflow.ellipsis)))],
       onChanged: (v) => setState(() {
         linkedTaskIndex = v == -1 ? null : v;
         completeLinkedTask = false;
@@ -250,7 +257,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     heading('گزارش‌های ثبت‌شده'),
     ...reports.asMap().entries.take(30).map((entry) { final r = entry.value; return Card(child: ListTile(
       title: Text(r['subject'].toString() + ' • ' + r['minutes'].toString() + ' دقیقه • ' + r['tests'].toString() + ' تست'),
-      subtitle: Text(r['date'].toString() + ' | رضایت ' + r['satisfaction'].toString() + '/۱۰ | خلق ' + r['mood'].toString() + '/۵ | استرس ' + r['stress'].toString() + '/۵'),
+      subtitle: Text(persianDate(r['date'].toString()) + ' | رضایت ' + r['satisfaction'].toString() + '/۱۰ | خلق ' + r['mood'].toString() + '/۵ | استرس ' + r['stress'].toString() + '/۵'),
       trailing: IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'ویرایش گزارش', onPressed: () => setState(() {
         editingReportIndex = entry.key; subjectController.text = r['subject'].toString(); noteController.text = (r['note'] ?? '').toString();
         minutes = (r['minutes'] as num).toInt(); tests = (r['tests'] as num).toInt(); satisfaction = (r['satisfaction'] as num).toInt(); mood = (r['mood'] as num).toInt(); stress = (r['stress'] as num).toInt();
@@ -309,7 +316,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       heading('روند مطالعه روزانه'),
       ...days.map((d) => Padding(padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(children: [
-          SizedBox(width: 60, child: Text(d.date.substring(5))),
+          SizedBox(width: 60, child: Text(persianDate(d.date).substring(5))),
           Expanded(child: LinearProgressIndicator(value: d.sum / maximum, minHeight: 12)),
           SizedBox(width: 75, child: Text(d.sum.toString() + ' دقیقه')),
         ]))),
