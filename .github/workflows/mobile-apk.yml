@@ -1,6 +1,11 @@
 name: Apex360 Android test APK
 
 on:
+  push:
+    branches: [feature/mobile-app-foundation]
+    paths:
+      - 'mobile_app/**'
+      - '.github/workflows/mobile-apk.yml'
   pull_request:
     branches: [main]
     paths:
