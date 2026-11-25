@@ -442,6 +442,12 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     }
   }
   Future<void> exportBackup() async {
+    final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('پشتیبان‌گیری از اطلاعات شخصی'),
+      content: const Text('این نسخه شامل نام، برنامه و گزارش‌های شخصی است و رمزگذاری نشده است. فقط در محل خصوصی ذخیره کنید و برای دیگران نفرستید.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('کپی پشتیبان'))]));
+    if (confirmed != true || !mounted) return;
     final payload = jsonEncode({'format': 'apex360-backup-v1', 'tasks': tasks, 'reports': reports, 'studentName': studentName, 'studentGrade': studentGrade, 'studentTrack': studentTrack});
     await Clipboard.setData(ClipboardData(text: payload));
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('نسخه پشتیبان کپی شد. آن را در محلی خصوصی ذخیره کنید؛ شامل اطلاعات شخصی است.')));
@@ -454,6 +460,10 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       if (raw.length > 5000000) throw const FormatException();
       final data = jsonDecode(raw) as Map<String, dynamic>;
       if (data['format'] != 'apex360-backup-v1') throw const FormatException();
+      for (final key in ['studentName', 'studentGrade', 'studentTrack']) {
+        if (data[key] != null && (data[key] is! String || (data[key] as String).length > 100)) throw const FormatException();
+      }
+      if (data['tasks'] is! List || data['reports'] is! List || (data['tasks'] as List).length > 20000 || (data['reports'] as List).length > 20000) throw const FormatException();
       final newTasks = (data['tasks'] as List).map((v) => Map<String, dynamic>.from(v as Map)).toList();
       final newReports = (data['reports'] as List).map((v) => Map<String, dynamic>.from(v as Map)).toList();
       for (final t in newTasks) {
