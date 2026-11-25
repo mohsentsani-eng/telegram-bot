@@ -444,14 +444,16 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     }
   }
   Future<String?> backupPassword(bool creating) async {
-    String password = '';
+    String password = '', confirmation = '';
     return showDialog<String>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) => AlertDialog(
       title: Text(creating ? 'رمز نسخه پشتیبان' : 'رمز بازیابی'),
-      content: TextField(obscureText: true, autocorrect: false, enableSuggestions: false,
+      content: Column(mainAxisSize: MainAxisSize.min, children: [TextField(obscureText: true, autocorrect: false, enableSuggestions: false,
         decoration: const InputDecoration(labelText: 'رمز (حداقل ۱۲ نویسه)'),
         onChanged: (v) => refresh(() => password = v)),
+        if (creating) TextField(obscureText: true, autocorrect: false, enableSuggestions: false, decoration: const InputDecoration(labelText: 'تکرار رمز'), onChanged: (v) => refresh(() => confirmation = v)),
+        if (creating) const Text('رمز را در محل امن نگه دارید؛ قابل بازیابی نیست.')]),
       actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
-        FilledButton(onPressed: password.length < 12 ? null : () => Navigator.pop(ctx, password), child: const Text('ادامه'))])));
+        FilledButton(onPressed: password.length < 12 || (creating && password != confirmation) ? null : () => Navigator.pop(ctx, password), child: const Text('ادامه'))])));
   }
   Future<SecretKey> backupKey(String password, List<int> salt) => Pbkdf2(macAlgorithm: Hmac.sha256(), iterations: 600000, bits: 256).deriveKey(secretKey: SecretKey(utf8.encode(password)), nonce: salt);
   Future<void> encryptedBackup() async {
