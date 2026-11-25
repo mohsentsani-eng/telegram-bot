@@ -211,8 +211,22 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       );
     }));
   }
+  List<String> get subjectChoices {
+    final grade = grades.indexOf(normalizedGrade(studentGrade));
+    if (grade < 0) return [];
+    if (grade < 6) return ['فارسی','ریاضی','علوم','قرآن','هدیه‌های آسمان','مطالعات اجتماعی'];
+    if (grade < 9) return ['فارسی','ریاضی','علوم','عربی','زبان انگلیسی','قرآن','پیام‌های آسمان','مطالعات اجتماعی','نگارش','کار و فناوری'];
+    return ['فارسی','نگارش','دینی','عربی','زبان انگلیسی', ...switch (studentTrack) {
+      'ریاضی' => ['ریاضی','حسابان','هندسه','آمار و احتمال','ریاضیات گسسته','فیزیک','شیمی'],
+      'تجربی' => ['ریاضی','زیست‌شناسی','فیزیک','شیمی','زمین‌شناسی'],
+      'انسانی' => ['علوم و فنون ادبی','ریاضی و آمار','جامعه‌شناسی','تاریخ','جغرافیا','اقتصاد','منطق','فلسفه','روان‌شناسی'],
+      _ => <String>[],
+    }];
+  }
+  Widget subjectSuggestions(TextEditingController controller) => Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Wrap(spacing: 6, runSpacing: 4, children: subjectChoices.map((name) => ActionChip(label: Text(name), onPressed: () => setState(() => controller.text = name))).toList()));
   Widget plan() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     heading('برنامه مطالعاتی روزانه'),
+    subjectSuggestions(taskController),
     TextField(controller: taskController, maxLength: 100,
       decoration: const InputDecoration(labelText: 'درس یا تکلیف', hintText: 'مثلاً مرور زیست')),
     TextField(controller: topicController, maxLength: 100,
@@ -306,6 +320,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       title: const Text('این تکلیف را کامل انجام دادم'),
       value: completeLinkedTask,
       onChanged: (v) => setState(() => completeLinkedTask = v ?? false)),
+    subjectSuggestions(subjectController),
     TextField(controller: subjectController, maxLength: 80,
       decoration: const InputDecoration(labelText: 'نام درس')),
     Text('مدت مطالعه: ' + minutes.toString() + ' دقیقه'),
@@ -397,7 +412,10 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         title: Text(e.key),
         subtitle: Text('${testsBySubject[e.key]} تست'),
         trailing: Text('${e.value} دقیقه')))),
-      heading('روند مطالعه روزانه'),
+      heading('پیشنهاد مطالعاتی'),
+    Card(child: Padding(padding: const EdgeInsets.all(16), child: Text(total == 0 ? 'برای شروع، یک فعالیت کوتاه و قابل انجام برنامه‌ریزی کنید.' : recentTasks.isEmpty ? 'برای مطالعه بعدی، تکلیف مشخصی در برنامه ثبت کنید تا بتوانید میزان پایبندی را بسنجید.' : completed < recentTasks.length ? 'تکالیف باقی‌مانده را بررسی کنید و برای هرکدام زمان واقع‌بینانه تعیین کنید.' : 'تکالیف ثبت‌شده انجام شده‌اند؛ مرور و تمرین بازیابی را در برنامه بعدی بگنجانید.'))),
+    const Text('پیشنهاد خودکار بر اساس گزارش محلی؛ جایگزین نظر مشاور نیست.'),
+    heading('روند مطالعه روزانه'),
       ...days.map((d) => Padding(padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(children: [
           SizedBox(width: 60, child: Text(persianDate(d.date).substring(5))),
