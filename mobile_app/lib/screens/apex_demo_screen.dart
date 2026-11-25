@@ -424,6 +424,23 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         ]))),
     ]);
   }
+  Future<void> recoverPreviousBackup() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('${storageKey}_before_restore');
+    if (!mounted) return;
+    if (raw == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('نسخه قبلی برای بازیابی وجود ندارد.')));
+      return;
+    }
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      await Clipboard.setData(ClipboardData(text: jsonEncode({...data, 'format': 'apex360-backup-v1'})));
+      if (!mounted) return;
+      await restoreBackup();
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('خواندن نسخه قبلی ناموفق بود.')));
+    }
+  }
   Future<void> exportBackup() async {
     final payload = jsonEncode({'format': 'apex360-backup-v1', 'tasks': tasks, 'reports': reports, 'studentName': studentName, 'studentGrade': studentGrade, 'studentTrack': studentTrack});
     await Clipboard.setData(ClipboardData(text: payload));
@@ -484,6 +501,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     heading('حساب محلی'),
     OutlinedButton.icon(onPressed: exportBackup, icon: const Icon(Icons.backup_outlined), label: const Text('کپی نسخه پشتیبان')),
     OutlinedButton.icon(onPressed: restoreBackup, icon: const Icon(Icons.restore), label: const Text('بازیابی از متن کپی‌شده')),
+    TextButton.icon(onPressed: recoverPreviousBackup, icon: const Icon(Icons.undo), label: const Text('بازگردانی اطلاعات قبل از آخرین بازیابی')),
     const Text('پشتیبان متنی رمزگذاری نشده است؛ آن را فقط در محل خصوصی نگه دارید.'),
 
     const Text('نسخه آزمایشی ۱۲ • اصلاح گزارش و تحلیل درس'),
