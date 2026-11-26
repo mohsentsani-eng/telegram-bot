@@ -139,10 +139,13 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         padding: const EdgeInsets.all(18),
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [Color(0xFF174C75), Color(0xFF167D82)]),
+          gradient: const LinearGradient(colors: [Color(0xFF43358B), Color(0xFF087E87)]),
           borderRadius: BorderRadius.circular(22)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('مسیر پیشرفت من', style: TextStyle(color: Colors.white70, fontSize: 14)),
+          Row(children: [
+            const Expanded(child: Text('مسیر پیشرفت من', style: TextStyle(color: Colors.white70, fontSize: 14))),
+            Container(padding: const EdgeInsets.all(12), decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle), child: const Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 32)),
+          ]),
           const SizedBox(height: 8),
           Text(studentName.isEmpty ? 'به Apex360 خوش آمدی' : 'سلام، $studentName', style: const TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
@@ -154,6 +157,11 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         ])),
       if (studentName.isEmpty || studentGrade.isEmpty)
         Card(child: ListTile(leading: const Icon(Icons.person_add_alt_1), title: const Text('تکمیل پروفایل دانش‌آموز'), subtitle: const Text('نام و پایه تحصیلی خود را ثبت کن.'), onTap: () => setState(() => tab = 4))),
+      Card(child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
+        const Icon(Icons.auto_awesome_rounded, color: Color(0xFF7861C5), size: 30),
+        const SizedBox(width: 12),
+        Expanded(child: Text(current.isEmpty ? 'با یک هدف کوچک شروع کن؛ حتی یک قدم ارزشمند است.' : done == current.length ? 'آفرین! حالا برای استراحت و مرور وقت بگذار.' : 'روی یک تکلیف تمرکز کن؛ لازم نیست همه چیز را یک‌باره انجام بدهی.')),
+      ]))),
       heading('خلاصه عملکرد امروز'),
       Card(child: ListTile(title: const Text('اجرای برنامه امروز'),
         subtitle: LinearProgressIndicator(value: current.isEmpty ? 0 : done / current.length),
@@ -162,7 +170,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       Card(child: ListTile(title: const Text('تست‌های امروز'), trailing: Text(count.toString() + ' تست'))),
       FilledButton.icon(onPressed: () => setState(() { selectedDate = DateTime.now(); filterDay = today; tab = 1; }), icon: const Icon(Icons.calendar_today), label: const Text('برنامه‌ریزی امروز')),
       OutlinedButton.icon(onPressed: () => setState(() => tab = 3), icon: const Icon(Icons.edit_note), label: const Text('ثبت گزارش مطالعه')),
-      heading('تکالیف امروز'),
+      heading('مأموریت‌های امروز'),
       if (current.isEmpty) const Text('هنوز تکلیفی برای امروز ثبت نشده است.'),
       ...current.map((t) => Card(child: CheckboxListTile(title: Text(t['title'].toString()), subtitle: Text('${t["plannedMinutes"] ?? 0} دقیقه'), value: t['done'] == true, onChanged: (v) async { setState(() => t['done'] = v ?? false); await save(); }))),
     ]);
