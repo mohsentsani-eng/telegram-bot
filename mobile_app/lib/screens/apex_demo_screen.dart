@@ -240,7 +240,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   }
   Widget subjectSuggestions(TextEditingController controller) => ExpansionTile(tilePadding: EdgeInsets.zero, title: const Text('انتخاب سریع درس'), children: [Wrap(spacing: 6, runSpacing: 4, children: subjectChoices.map((name) => ActionChip(label: Text(name), onPressed: () => setState(() => controller.text = name))).toList())]);
   Widget plan() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    heading('برنامه مطالعاتی روزانه'),
+    heading('برنامه شخصی روزانه'),
     Card(child: ListTile(
       leading: const Icon(Icons.flag_outlined),
       title: Text('تکالیف امروز: ${tasks.where((t) => t['date'] == today && t['done'] == true).length} از ${tasks.where((t) => t['date'] == today).length} انجام شده'),
@@ -277,7 +277,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     if (editingTaskIndex != null) TextButton(onPressed: () => setState(() {
       editingTaskIndex = null; taskController.clear(); topicController.clear(); planFormVersion++;
     }), child: const Text('انصراف از ویرایش')),
-    heading('نمای هفتگی برنامه'),
+    heading('نمای هفتگی برنامه شخصی'),
     Wrap(spacing: 6, runSpacing: 6, children: [
       ChoiceChip(label: const Text('همه'), selected: filterDay == null, onSelected: (_) => setState(() => filterDay = null)),
       ...List.generate(7, (i) {
@@ -600,7 +600,6 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     TextButton.icon(onPressed: recoverPreviousBackup, icon: const Icon(Icons.undo), label: const Text('بازگردانی اطلاعات قبل از آخرین بازیابی')),
     const Text('پشتیبان متنی رمزگذاری نشده است؛ آن را فقط در محل خصوصی نگه دارید.'),
 
-    const Text('نسخه آزمایشی ۱۳'),
     const Card(child: ListTile(title: Text('پروفایل دانش‌آموز'),
       subtitle: Text('مشخصات محلی؛ بدون اتصال به پرونده آنلاین'))),
     TextField(controller: nameController, maxLength: 80, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی')),
@@ -659,7 +658,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         SafeArea(child: ListView(key: ValueKey(tab), padding: const EdgeInsets.all(14), children: [
           if (!profileComplete || tab == 4) Container(padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(color: theme.colorScheme.secondaryContainer, borderRadius: BorderRadius.circular(14)),
-            child: Text('نسخه آفلاین آزمایشی • داده‌ها فقط روی گوشی ذخیره می‌شوند و به ربات یا مشاور ارسال نمی‌شوند. حذف برنامه ممکن است اطلاعات را پاک کند.',
+            child: Text('برنامه و گزارش‌های شخصی روی همین گوشی ذخیره می‌شوند. برای ارسال گزارش به سامانه، از بخش گزارش‌ها در حساب دانش‌آموز استفاده کن.',
               style: TextStyle(color: theme.colorScheme.onSecondaryContainer, fontSize: 12, height: 1.8))),
           const SizedBox(height: 12),
           if (!profileComplete) ...[heading('ابتدا پروفایل خود را تکمیل کنید'), account()],
@@ -673,7 +672,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         onDestinationSelected: (v) => setState(() => tab = v),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home_outlined), label: 'خانه'),
-          NavigationDestination(icon: Icon(Icons.calendar_month_outlined), label: 'برنامه'),
+          NavigationDestination(icon: Icon(Icons.calendar_month_outlined), label: 'برنامه شخصی'),
           NavigationDestination(icon: Icon(Icons.bar_chart_outlined), label: 'پیشرفت'),
           NavigationDestination(icon: Icon(Icons.edit_note_outlined), label: 'گزارش'),
           NavigationDestination(icon: Icon(Icons.person_outline), label: 'حساب'),

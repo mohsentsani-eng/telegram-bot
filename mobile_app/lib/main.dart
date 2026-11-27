@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'screens/login_screen.dart';
 import 'screens/apex_demo_screen.dart';
 import 'screens/student_home_screen.dart';
@@ -10,8 +11,15 @@ void main() {
   runApp(const TaranomApp());
 }
 
-class TaranomApp extends StatelessWidget {
+class TaranomApp extends StatefulWidget {
   const TaranomApp({super.key});
+
+  @override
+  State<TaranomApp> createState() => _TaranomAppState();
+}
+
+class _TaranomAppState extends State<TaranomApp> {
+  final _package = PackageInfo.fromPlatform();
 
   @override
   Widget build(BuildContext context) {
@@ -20,6 +28,37 @@ class TaranomApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       locale: const Locale('fa'),
+      builder: (context, navigator) => Column(
+        children: [
+          Expanded(child: navigator!),
+          FutureBuilder<PackageInfo>(
+            future: _package,
+            builder: (context, snapshot) {
+              final info = snapshot.data;
+              if (info == null || info.version.isEmpty || info.buildNumber.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              final theme = Theme.of(context);
+              return Material(
+                color: theme.colorScheme.surface,
+                child: SafeArea(
+                  top: false,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Text(
+                        'Apex360 · ${info.version}+${info.buildNumber}',
+                        textDirection: TextDirection.ltr,
+                        style: theme.textTheme.labelSmall,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       home: const bool.fromEnvironment('APEX_DEMO_MODE', defaultValue: false)
           ? const ApexDemoScreen()
           : const _AuthenticationGate(),

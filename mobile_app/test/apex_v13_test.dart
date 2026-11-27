@@ -128,7 +128,7 @@ void main() {
     'planner opens a linked study report and saves it with its task',
     (tester) async {
       await openApp(tester);
-      await tester.tap(find.text('برنامه'));
+      await tester.tap(find.text('برنامه شخصی'));
       await tester.pumpAndSettle();
 
       final reportAction = find.text('ثبت مطالعه');

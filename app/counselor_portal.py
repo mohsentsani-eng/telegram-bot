@@ -2,8 +2,9 @@ import hashlib
 import hmac
 import html
 import secrets
+import re
 
-from fastapi import APIRouter, Request, Form
+from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from . import db
 
@@ -124,15 +125,38 @@ def student_page(req: Request, student_id: int):
         (SELECT answer FROM daily_report_answers a WHERE a.report_id=dr.id AND a.question_key='stress') stress,
         (SELECT answer FROM daily_report_answers a WHERE a.report_id=dr.id AND a.question_key='motivation') motivation
         FROM daily_reports dr WHERE dr.student_id=? ORDER BY dr.report_date DESC LIMIT 45""", (student_id,)).fetchall()
+    mobile_reports = c.execute(
+        """SELECT subject, activity_type, duration_minutes, test_count, client_created_at
+           FROM mobile_study_activities WHERE student_id=?
+           ORDER BY client_created_at DESC, id DESC LIMIT 45""", (student_id,),
+    ).fetchall()
     notes = c.execute("SELECT note,created_at FROM counselor_notes WHERE student_id=? ORDER BY id DESC LIMIT 25", (student_id,)).fetchall()
     followups = c.execute("SELECT id,followup_type,priority,due_at,note,created_at FROM followups WHERE student_id=? AND status='open' ORDER BY id DESC LIMIT 40", (student_id,)).fetchall()
     c.close()
     rrows = "".join(f"<tr><td>{_esc(r['report_date'])}</td><td>{float(r['study_hours'] or 0):.1f}</td><td>{float(r['plan_execution'] or 0):.0f}%</td><td>{int(r['practice_count'] or 0)}</td><td>{_esc(r['main_problem'])}</td><td>{_esc(r['mood'] or '—')}</td><td>{_esc(r['stress'] or '—')}</td><td>{_esc(r['motivation'] or '—')}</td><td>{_esc(r['status'])}</td></tr>" for r in reports)
+    labels = {"study": "مطالعه", "practice": "تمرین", "review": "مرور", "video": "ویدئو"}
+    mrows = "".join(
+        f"<tr><td>{_esc(r['client_created_at'])}</td><td>{_esc(r['subject'])}</td>"
+        f"<td>{_esc(labels.get(r['activity_type']))}</td><td>{r['duration_minutes']}</td>"
+        f"<td>{r['test_count']}</td></tr>" for r in mobile_reports
+    )
+    plan_token = req.session.get("plan_csrf")
+    if not plan_token:
+        plan_token = secrets.token_urlsafe(24)
+        req.session["plan_csrf"] = plan_token
     nrows = "".join(f"<li>{_esc(n['note'])} <span class='muted'>({_esc(n['created_at'])})</span></li>" for n in notes)
     furows = "".join(f"<tr><td>{_esc(f['followup_type'])}</td><td>{_esc(f['priority'])}</td><td>{_esc(f['due_at'] or '—')}</td><td>{_esc(f['note'])}</td><td><form method='post' action='/counselor/followup/{f['id']}/complete'><input type='hidden' name='student_id' value='{student_id}'><button>تکمیل شد</button></form></td></tr>" for f in followups)
     body = f"""<h2>پرونده {_esc(s['first_name'])} {_esc(s['last_name'])}</h2><p>پایه: {_esc(s['grade'])} | رشته: {_esc(s['track'])}</p>
 <div class="card"><h3>ثبت یادداشت مشاور</h3><form method="post" action="/counselor/student/{student_id}/note"><textarea name="note" required maxlength="4000" placeholder="خلاصه جلسه، نکته مهم، اقدام بعدی..."></textarea><button>ثبت یادداشت</button></form></div>
 <div class="card"><h3>ثبت پیگیری جدید</h3><form method="post" action="/counselor/student/{student_id}/followup"><label>نوع پیگیری</label><select name="followup_type"><option value="general">عمومی</option><option value="study_plan">برنامه درسی</option><option value="parent_contact">تماس با والدین</option><option value="daily_report_followup">گزارش روزانه</option></select><label>اولویت</label><select name="priority"><option value="normal">عادی</option><option value="high">بالا</option><option value="urgent">فوری</option></select><label>زمان پیگیری (اختیاری)</label><input name="due_at" placeholder="2026-10-12 16:00"><label>یادداشت</label><textarea name="note" maxlength="2000"></textarea><button>ثبت پیگیری</button></form></div>
+<div class="card"><h3>انتشار برنامه مشاور در Apex360</h3>
+<form method="post" action="/counselor/student/{student_id}/plan">
+<input type="hidden" name="csrf" value="{_esc(plan_token)}">
+<label>عنوان برنامه<input name="title" maxlength="100" required></label>
+<label>هر فعالیت در یک خط با قالب روز | شروع | پایان | درس
+<textarea name="schedule" maxlength="4000" required placeholder="شنبه | 16:00 | 16:45 | ریاضی"></textarea></label>
+<button>انتشار برنامه</button></form></div>
+<h3>گزارش‌های Apex360</h3><table><tr><th>زمان (UTC)</th><th>درس</th><th>فعالیت</th><th>دقیقه</th><th>تست</th></tr>{mrows or '<tr><td colspan="5">هنوز گزارشی دریافت نشده است.</td></tr>'}</table>
 <h3>یادداشت‌های اخیر</h3><ul>{nrows or '<li>یادداشتی ثبت نشده است.</li>'}</ul>
 <h3>پیگیری‌های باز</h3><table><tr><th>نوع</th><th>اولویت</th><th>زمان</th><th>یادداشت</th><th>عملیات</th></tr>{furows or '<tr><td colspan="5">پیگیری بازی وجود ندارد.</td></tr>'}</table>
 <h3>گزارش‌های روزانه</h3><table><tr><th>تاریخ</th><th>ساعت</th><th>اجرای برنامه</th><th>تمرین</th><th>مشکل اصلی</th><th>حال روحی</th><th>استرس</th><th>انگیزه</th><th>وضعیت</th></tr>{rrows or '<tr><td colspan="9">گزارشی ثبت نشده است.</td></tr>'}</table>
@@ -144,6 +168,38 @@ def _owns(counselor_id, student_id):
     row = c.execute("SELECT 1 FROM student_counselor_assignments WHERE counselor_id=? AND student_id=? AND active=1 LIMIT 1", (counselor_id, student_id)).fetchone()
     c.close()
     return bool(row)
+
+@router.post("/counselor/student/{student_id}/plan")
+def publish_plan(req: Request, student_id: int, title: str = Form(..., max_length=100),
+                 schedule: str = Form(..., max_length=4000), csrf: str = Form(...)):
+    counselor = _guard(req)
+    if not counselor:
+        return RedirectResponse("/counselor/login", status_code=303)
+    token = req.session.get("plan_csrf")
+    if not token or not secrets.compare_digest(token.encode(), csrf.encode()):
+        raise HTTPException(403, "invalid_form_token")
+    blocks = []
+    days = {"شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "سه شنبه", "چهارشنبه", "پنجشنبه", "جمعه"}
+    for line in schedule.splitlines():
+        if not line.strip():
+            continue
+        fields = [value.strip() for value in line.split("|")]
+        if len(fields) != 4:
+            raise HTTPException(422, "invalid_plan_row")
+        day, start, end, subject = fields
+        if (day not in days or not 1 <= len(subject) <= 80
+                or not all(re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", t) for t in (start, end))
+                or start >= end):
+            raise HTTPException(422, "invalid_plan_row")
+        start_hour, start_minute = map(int, start.split(":"))
+        end_hour, end_minute = map(int, end.split(":"))
+        blocks.append([day, 60 * start_hour + start_minute, 60 * end_hour + end_minute, subject])
+    if not title.strip() or not 1 <= len(blocks) <= 60:
+        raise HTTPException(422, "invalid_plan")
+    if not db.publish_counselor_plan(student_id, counselor["id"], title.strip(), blocks):
+        raise HTTPException(403, "student_not_assigned")
+    return RedirectResponse(f"/counselor/student/{student_id}", status_code=303)
+
 
 @router.post("/counselor/student/{student_id}/note")
 def add_note(req: Request, student_id: int, note: str = Form(...)):

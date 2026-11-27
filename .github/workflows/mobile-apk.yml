@@ -6,6 +6,8 @@ on:
     paths:
       - 'mobile_app/**'
       - 'app/mobile_api.py'
+      - 'app/db.py'
+      - 'app/counselor_portal.py'
       - 'tools/*mobile*.py'
       - 'tests/test_mobile_auth.py'
       - '.github/workflows/mobile-apk.yml'
@@ -49,10 +51,10 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Test the offline app
         working-directory: mobile_app
-        run: flutter test
+        run: flutter test --dart-define=API_BASE_URL=https://apex.test
       - name: Test the isolated mobile API
         run: |
-          python3 -m pip install 'fastapi>=0.115' uvicorn pytest httpx
+          python3 -m pip install 'fastapi>=0.115' uvicorn pytest httpx python-multipart itsdangerous
           python3 -m pytest -q tests/test_mobile_auth.py
       - name: Configure stable debug signing
         env:
@@ -68,17 +70,13 @@ jobs:
           keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file "$RUNNER_TEMP/apex360-signer.der"
       - name: Build installable test APK
         working-directory: mobile_app
-        run: flutter build apk --debug --build-name=0.14.0 --build-number="${{ github.run_number }}" --dart-define=APEX_LOCAL_TEST=true
+        run: flutter build apk --debug --dart-define=APEX_LOCAL_TEST=true
       - name: Verify APK identity and version
         working-directory: mobile_app
-        env:
-          APEX_BUILD_NUMBER: ${{ github.run_number }}
         run: |
           AAPT="$(find "${ANDROID_HOME}/build-tools" -name aapt -type f | sort -V | tail -1)"
           metadata="$("$AAPT" dump badging build/app/outputs/flutter-apk/app-debug.apk)"
-          grep -F "package: name='ir.taranomhamdeli.taranom_hamdeli' versionCode='$APEX_BUILD_NUMBER' versionName='0.14.0'" <<< "$metadata"
-          # The verified 0.13.0 APK (run 45976429486) has versionCode 41.
-          test "$APEX_BUILD_NUMBER" -gt 41
+          grep -F "package: name='ir.taranomhamdeli.taranom_hamdeli' versionCode='43' versionName='0.15.0'" <<< "$metadata"
       - name: Verify APK signature
         working-directory: mobile_app
         env:

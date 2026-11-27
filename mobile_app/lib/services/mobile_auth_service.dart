@@ -13,7 +13,7 @@ class MobileAuthService {
   MobileAuthService._(this._client);
   static final _shared = MobileAuthService._(http.Client());
   static const String _baseUrl = String.fromEnvironment(
-    'API_BASE_URL', defaultValue: 'https://telegram-bot-production-5605.up.railway.app',
+    'API_BASE_URL',
   );
   static const _storage = FlutterSecureStorage();
   final http.Client _client;
@@ -24,15 +24,36 @@ class MobileAuthService {
   bool _loggingOut = false;
   int _sessionGeneration = 0;
 
-  String get _endpoint => isLocalTest ? _localUrl : _baseUrl;
+  String get _endpoint => isLocalTest
+      ? _localUrl
+      : _baseUrl.replaceFirst(RegExp(r'/$'), '');
   String _key(String key) => isLocalTest ? 'apex_local_$key' : key;
   String _planKey(int id) => _key('study_plan_v1_$id');
+  String _counselorKey(int id) => _key('counselor_context_v1_$id');
   bool get isConfigured {
     final uri = Uri.tryParse(_endpoint);
     return isLocalTest ||
         (uri != null && uri.scheme == 'https' &&
-            uri.host.isNotEmpty && uri.userInfo.isEmpty);
+            uri.host.isNotEmpty && uri.userInfo.isEmpty && !uri.hasQuery &&
+            !uri.hasFragment && (uri.path.isEmpty || uri.path == '/'));
   }
+
+  Future<http.Response> _request(Uri uri, {
+    required String method,
+    Map<String, String>? headers,
+    String? body,
+  }) async {
+    final request = http.Request(method, uri)..followRedirects = false;
+    if (headers != null) request.headers.addAll(headers);
+    if (body != null) request.body = body;
+    return http.Response.fromStream(await _client.send(request));
+  }
+
+  Future<http.Response> _get(Uri uri, {Map<String, String>? headers}) =>
+      _request(uri, method: 'GET', headers: headers);
+
+  Future<http.Response> _post(Uri uri, {Map<String, String>? headers, String? body}) =>
+      _request(uri, method: 'POST', headers: headers, body: body);
 
   Future<String?> _read(String key) => _storage.read(key: _key(key));
 
@@ -45,7 +66,7 @@ class MobileAuthService {
 
   Future<void> loginLocally(String code) async {
     if (!isLocalTest) throw StateError('ورود آزمایشی فعال نیست.');
-    final response = await _client.post(
+    final response = await _post(
       Uri.parse('$_endpoint/api/v1/mobile/auth/local'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'code': code}),
@@ -59,7 +80,10 @@ class MobileAuthService {
   Future<void> clearSession() async {
     _sessionGeneration++;
     final id = await cachedStudentId();
-    if (id != null) await _storage.delete(key: _planKey(id));
+    if (id != null) {
+      await _storage.delete(key: _planKey(id));
+      await _storage.delete(key: _counselorKey(id));
+    }
     await _storage.delete(key: _key('mobile_access_token'));
     await _storage.delete(key: _key('mobile_refresh_token'));
     await _storage.delete(key: _key('cached_student_id'));
@@ -80,7 +104,7 @@ class MobileAuthService {
       final access = await _read('mobile_access_token');
       final refresh = await _read('mobile_refresh_token');
       if (access != null && refresh != null) {
-        await _client.post(
+        await _post(
           Uri.parse('$_endpoint/api/v1/mobile/auth/logout'),
           headers: {
             'Authorization': 'Bearer $access',
@@ -117,7 +141,7 @@ class MobileAuthService {
     if (!isConfigured) return false;
     final refresh = await _read('mobile_refresh_token');
     if (refresh == null) return false;
-    final response = await _client.post(
+    final response = await _post(
       Uri.parse('$_endpoint/api/v1/mobile/auth/refresh'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'refresh_token': refresh}),
@@ -165,31 +189,30 @@ class MobileAuthService {
     return sendForCurrentSession(refreshed);
   }
 
-  Future<http.Response> _studentGet(String resource) => _authenticatedRequest(
-        (token) => _client.get(
+  Future<http.Response> _studentGet(String resource, {int? studentId}) => _authenticatedRequest(
+        (token) => _get(
           Uri.parse('$_endpoint/api/v1/mobile/student/$resource'),
           headers: {'Authorization': 'Bearer $token'},
         ).timeout(const Duration(seconds: 8)),
+        studentId: studentId,
       );
 
-  Future<Map<String, dynamic>?> cachedStudyPlan(int studentId) async {
-    final raw = await _storage.read(key: _planKey(studentId));
+  Future<Map<String, dynamic>?> cachedCounselor(int studentId) async {
+    final raw = await _storage.read(key: _counselorKey(studentId));
     return raw == null ? null : jsonDecode(raw) as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>?> fetchStudyPlan(int studentId) async {
-    final response = await _studentGet('study-plan');
+  Future<Map<String, dynamic>> fetchCounselor(int studentId) async {
+    final response = await _studentGet('counselor', studentId: studentId);
     if (response.statusCode != 200 || await cachedStudentId() != studentId) {
-      throw StateError('دریافت برنامه ممکن نشد.');
+      throw StateError('دریافت اطلاعات مشاور ممکن نشد.');
     }
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
-    final plan = body['plan'] as Map<String, dynamic>?;
-    if (plan == null) {
-      await _storage.delete(key: _planKey(studentId));
-    } else {
-      await _storage.write(key: _planKey(studentId), value: jsonEncode(plan));
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (!data.containsKey('assignment') || !data.containsKey('plan')) {
+      throw const FormatException('Invalid counselor response');
     }
-    return plan;
+    await _storage.write(key: _counselorKey(studentId), value: jsonEncode(data));
+    return data;
   }
 
   Future<int?> cachedStudentId() async {
@@ -220,7 +243,7 @@ class MobileAuthService {
     var synced = 0;
     for (var offset = 0; offset < pending.length; offset += 50) {
       final batch = pending.skip(offset).take(50).toList();
-      Future<http.Response> send(String token) => _client.post(
+      Future<http.Response> send(String token) => _post(
         Uri.parse('$_endpoint/api/v1/mobile/student/study-activities/sync'),
         headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
         body: jsonEncode({'activities': batch}),
@@ -244,7 +267,7 @@ class MobileAuthService {
   Future<void> loginWithTelegram({required void Function(String) onStatus}) async {
     if (!isConfigured) throw Exception('نشانی امن سرور هنوز در نسخه آزمایشی تنظیم نشده است.');
     onStatus('در حال ساخت درخواست ورود امن...');
-    final created = await _client.post(
+    final created = await _post(
       Uri.parse('$_endpoint/api/v1/mobile/auth/challenge'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'platform': 'flutter'}),
@@ -267,7 +290,9 @@ class MobileAuthService {
     final start = verificationUrl.queryParameters['start'];
     if (start == null) throw Exception('پیوند تأیید ورود معتبر نیست.');
     final parts = start.split('_');
-    if (parts.length != 3) throw Exception('شناسه درخواست ورود معتبر نیست.');
+    if (parts.length != 3 || parts[0] != 'mobile' || parts[1] != challengeId ||
+        !RegExp(r'^[a-f0-9]{12}$').hasMatch(challengeId) ||
+        !RegExp(r'^[a-f0-9]{32}$').hasMatch(parts[2])) throw Exception('شناسه درخواست ورود معتبر نیست.');
     final secret = parts[2];
 
     onStatus('در تلگرام، ورود به اپلیکیشن را تأیید کنید.');
@@ -276,7 +301,7 @@ class MobileAuthService {
     final expiry = DateTime.now().add(Duration(seconds: (challenge['expires_in'] as num).toInt()));
     while (DateTime.now().isBefore(expiry)) {
       await Future<void>.delayed(Duration(seconds: (challenge['poll_interval_seconds'] as num).toInt()));
-      final response = await _client.post(
+      final response = await _post(
         Uri.parse('$_endpoint/api/v1/mobile/auth/challenge/$challengeId'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'secret': secret}),

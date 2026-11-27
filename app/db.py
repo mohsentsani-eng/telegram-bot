@@ -788,6 +788,66 @@ def active_counselor(student_id):
                    WHERE a.student_id=? AND a.active=1 ORDER BY a.id DESC LIMIT 1""",(student_id,)).fetchone()
     c.close(); return r
 
+def publish_counselor_plan(student_id, counselor_id, title, schedule):
+    """Publish against the current assignment while preserving all prior plans."""
+    c = conn()
+    try:
+        assignment = c.execute(
+            """SELECT a.id, a.counselor_id, a.assigned_at, co.name
+               FROM student_counselor_assignments a JOIN counselors co ON co.id=a.counselor_id
+               WHERE a.student_id=? AND a.active=1 AND co.active=1 ORDER BY a.id DESC LIMIT 1""",
+            (student_id,),
+        ).fetchone()
+        if assignment is None or assignment["counselor_id"] != counselor_id:
+            return False
+        content = json.dumps({
+            "source": "counselor", "assignment_id": assignment["id"], "schedule": schedule,
+        }, ensure_ascii=False)
+        change = c.execute(
+            """INSERT INTO plans(student_id,title,content_json)
+               SELECT a.student_id, ?, ? FROM student_counselor_assignments a
+               JOIN counselors co ON co.id=a.counselor_id
+               WHERE a.id=? AND a.active=1 AND co.active=1""",
+            (title, content, assignment["id"]),
+        )
+        c.commit()
+        return change.rowcount == 1
+    finally:
+        c.close()
+
+
+def mobile_counselor_plan(student_id):
+    c = conn()
+    try:
+        # Read assignment and its latest publication from the same snapshot.
+        c.execute("BEGIN")
+        assignment = c.execute(
+            """SELECT a.id, a.assigned_at, co.name
+               FROM student_counselor_assignments a JOIN counselors co ON co.id=a.counselor_id
+               WHERE a.student_id=? AND a.active=1 AND co.active=1 ORDER BY a.id DESC LIMIT 1""",
+            (student_id,),
+        ).fetchone()
+        if assignment is None:
+            return {"assignment": None, "plan": None}
+        row = c.execute(
+            """SELECT id,title,created_at,content_json FROM plans
+               WHERE student_id=? AND status='active'
+                 AND CASE WHEN json_valid(content_json) THEN
+                    json_extract(content_json,'$.source')='counselor'
+                    AND json_extract(content_json,'$.assignment_id')=?
+                 ELSE 0 END
+               ORDER BY id DESC LIMIT 1""",
+            (student_id, assignment["id"]),
+        ).fetchone()
+        plan = None if row is None else {
+            "id": row["id"], "title": row["title"], "created_at": row["created_at"],
+            "schedule": json.loads(row["content_json"])["schedule"],
+        }
+        return {"assignment": dict(assignment), "plan": plan}
+    finally:
+        c.close()
+
+
 def add_counselor_note(student_id, counselor_id, note):
     c=conn(); c.execute("INSERT INTO counselor_notes(student_id,counselor_id,note) VALUES(?,?,?)",(student_id,counselor_id,note)); c.commit(); c.close()
 

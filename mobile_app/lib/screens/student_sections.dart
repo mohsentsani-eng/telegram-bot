@@ -11,33 +11,45 @@ class StudyPlanScreen extends StatefulWidget {
   State<StudyPlanScreen> createState() => _StudyPlanScreenState();
 }
 
-class _StudyPlanScreenState extends State<StudyPlanScreen> {
+class _StudyPlanScreenState extends State<StudyPlanScreen> with WidgetsBindingObserver {
   final _auth = MobileAuthService();
-  Map<String, dynamic>? _plan;
+  Map<String, dynamic>? _counselor;
   bool _loading = false;
   bool _offline = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
   Future<void> _load() async {
-    if (_loading) return;
+    if (!mounted || _loading) return;
     setState(() => _loading = true);
     try {
       final id = await _auth.cachedStudentId();
       if (id == null) throw StateError('حساب دانش‌آموز در دسترس نیست.');
-      final cached = await _auth.cachedStudyPlan(id);
+      final cached = await _auth.cachedCounselor(id);
       if (!mounted) return;
-      setState(() => _plan = cached);
-      final plan = await _auth.fetchStudyPlan(id);
-      if (mounted) setState(() { _plan = plan; _offline = false; });
+      setState(() => _counselor = cached);
+      final counselor = await _auth.fetchCounselor(id);
+      if (mounted) setState(() { _counselor = counselor; _offline = false; });
     } catch (_) {
       final id = await _auth.cachedStudentId();
       if (mounted) setState(() {
-        if (id == null) _plan = null;
+        if (id == null) _counselor = null;
         _offline = true;
       });
     } finally {
@@ -50,10 +62,12 @@ class _StudyPlanScreenState extends State<StudyPlanScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final schedule = _plan?['schedule'] as List<dynamic>? ?? [];
+    final assignment = _counselor?['assignment'] as Map<String, dynamic>?;
+    final plan = _counselor?['plan'] as Map<String, dynamic>?;
+    final schedule = plan?['schedule'] as List<dynamic>? ?? [];
     return Scaffold(
       appBar: AppBar(
-        title: const Text('برنامه مطالعاتی'),
+        title: const Text('برنامه مشاور'),
         actions: [
           IconButton(
             tooltip: 'دریافت دوباره برنامه',
@@ -65,10 +79,24 @@ class _StudyPlanScreenState extends State<StudyPlanScreen> {
       body: ListView(padding: const EdgeInsets.all(20), children: [
         if (_loading) const LinearProgressIndicator(),
         if (_offline)
-          Text(_plan == null ? 'دریافت برنامه ممکن نشد.' : 'نمایش آخرین برنامه ذخیره‌شده'),
-        if (!_loading && !_offline && _plan == null)
-          const Text('هنوز برنامه فعالی برای شما ثبت نشده است.'),
-        if (_plan != null) Text(_plan?['title'] as String? ?? 'برنامه مطالعاتی'),
+          Text(_counselor == null
+              ? 'دریافت اطلاعات مشاور ممکن نشد.'
+              : 'نمایش آخرین وضعیت ذخیره‌شده؛ سرور در دسترس نیست.'),
+        if (assignment != null)
+          Card(child: ListTile(
+            leading: const Icon(Icons.person_outline_rounded),
+            title: Text(assignment['name'] as String),
+            subtitle: const Text('مشاور تخصیص‌یافته'),
+          )),
+        if (!_loading && !_offline && assignment == null)
+          const Text('هنوز مشاوری به حساب شما تخصیص داده نشده است.'),
+        if (assignment != null && plan == null)
+          const Text('مشاور هنوز برنامه‌ای منتشر نکرده است.'),
+        if (plan != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: Text(plan['title'] as String, style: Theme.of(context).textTheme.titleLarge),
+          ),
         for (final block in schedule.cast<List<dynamic>>())
           ListTile(
             title: Text('${block[0]} • ${block[3]}'),
@@ -100,6 +128,8 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
   bool _saving = false;
   bool _syncing = false;
   String? _error;
+  bool _retryNeeded = false;
+  int get _pending => _activities.where((item) => item['sync_state'] != 'synced').length;
   List<Map<String, dynamic>> _activities = [];
 
   @override
@@ -183,19 +213,22 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
 
   Future<void> _sync({bool quiet = false}) async {
     if (!mounted || _studentId == null || _syncing) return;
-    if (quiet && !_activities.any((item) => item['sync_state'] != 'synced')) return;
+    if (_pending == 0) return;
     setState(() => _syncing = true);
     try {
       final count = await MobileAuthService().syncStudyActivities(_studentId!, _store);
       final updated = await _store.read(_studentId!);
       if (!mounted) return;
-      setState(() { _activities = updated; _error = null; });
+      setState(() { _activities = updated; _retryNeeded = false; });
       if (!quiet) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('$count فعالیت با سرور همگام شد.'),
       ));
     } catch (_) {
-      if (mounted && !quiet) setState(() => _error =
-          'ارسال کامل نشد. گزارش‌های تأییدنشده برای تلاش بعدی روی گوشی باقی ماندند.');
+      final updated = await _store.read(_studentId!);
+      if (mounted) setState(() {
+        _activities = updated;
+        _retryNeeded = true;
+      });
     } finally {
       if (mounted) setState(() => _syncing = false);
     }
@@ -216,10 +249,13 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
       const Text('مطالعه امروزت رو ثبت کن', style: TextStyle(
         fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.ink)),
       const SizedBox(height: 12),
-      const Card(child: Padding(padding: EdgeInsets.all(14),
-        child: Text('فعالیت‌ها ابتدا روی گوشی ذخیره می‌شوند. با اتصال اینترنت، '
-            'دکمه همگام‌سازی را بزنید. پیش از تأیید ارسال، برنامه را حذف نکنید.',
-            style: TextStyle(fontSize: 12, height: 1.8)))),
+      Card(child: ListTile(
+        leading: Icon(_retryNeeded ? Icons.cloud_off_outlined : Icons.cloud_sync_outlined),
+        title: Text(_syncing ? 'در حال ارسال' : '$_pending گزارش در صف ارسال'),
+        subtitle: Text(_retryNeeded
+            ? 'ارسال در آخرین تلاش کامل نشد. گزارش‌ها روی گوشی محفوظ‌اند.'
+            : 'هنگام باز بودن برنامه، ارسال دوباره به‌صورت خودکار انجام می‌شود.'),
+      )),
       const SizedBox(height: 16),
       TextField(controller: _subject, maxLength: 80,
         decoration: const InputDecoration(labelText: 'نام درس', hintText: 'مثلاً زیست‌شناسی')),
@@ -256,7 +292,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
       ),
       const SizedBox(height: 12),
       OutlinedButton.icon(
-        onPressed: _studentId == null || _syncing ? null : () => _sync(),
+        onPressed: _studentId == null || _syncing || _pending == 0 ? null : () => _sync(),
         icon: const Icon(Icons.sync_rounded),
         label: Text(_syncing ? 'در حال همگام‌سازی...' : 'ارسال گزارش‌های ذخیره‌شده به سرور'),
       ),
@@ -264,12 +300,15 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
       Text('فعالیت‌های ثبت‌شده (${_activities.length})',
         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
       const SizedBox(height: 8),
-      ..._activities.take(20).map((activity) => Card(child: ListTile(
-        title: Text(activity['subject'] as String),
-        subtitle: Text('${activity['duration_minutes']} دقیقه • '
-          '${activity['test_count']} تست • ${activity['sync_state'] == 'synced' ? 'همگام‌شده' : 'در انتظار همگام‌سازی'}'),
-        leading: const Icon(Icons.cloud_off_outlined, color: AppColors.primary),
-      ))),
+      for (final activity in _activities.take(20))
+        Card(child: ListTile(
+          title: Text(activity['subject'] as String),
+          subtitle: Text('${activity['duration_minutes']} دقیقه • ${activity['test_count']} تست'),
+          leading: Icon(activity['sync_state'] == 'synced'
+              ? Icons.cloud_done_outlined : Icons.schedule_rounded),
+          trailing: Text(activity['sync_state'] == 'synced'
+              ? 'تأیید سرور' : 'در صف ارسال'),
+        )),
     ]),
   );
 }

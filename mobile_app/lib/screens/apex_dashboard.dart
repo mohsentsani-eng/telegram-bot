@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 class ApexDashboard extends StatelessWidget {
   const ApexDashboard({
     super.key,
@@ -46,11 +48,7 @@ class ApexDashboard extends StatelessWidget {
         DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(28),
-            gradient: const LinearGradient(
-              begin: Alignment.topRight,
-              end: Alignment.bottomLeft,
-              colors: [Color(0xFF4B328D), Color(0xFF265087), Color(0xFF146469)],
-            ),
+            gradient: AppColors.apexGradient,
           ),
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -86,6 +84,16 @@ class ApexDashboard extends StatelessWidget {
                       ),
                     ),
                   ],
+                ),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(foregroundColor: const Color(0xFFAAEEE2)),
+                    onPressed: () => showAva(context, guidance: guidance,
+                        onPlan: onPlan, onReport: onReport),
+                    icon: const Icon(Icons.auto_awesome_rounded, size: 17),
+                    label: const Text('از آوا کمک بگیر'),
+                  ),
                 ),
                 const SizedBox(height: 18),
                 LinearProgressIndicator(
@@ -155,6 +163,44 @@ class ApexDashboard extends StatelessWidget {
   }
 }
 
+Future<void> showAva(BuildContext context, {
+  required String guidance,
+  required VoidCallback onPlan,
+  required VoidCallback onReport,
+}) =>
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (sheet) => SafeArea(
+        child: Directionality(
+          textDirection: TextDirection.rtl,
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 22),
+            children: [
+              Text('آوا، همراه مطالعه', style: Theme.of(sheet).textTheme.titleLarge),
+              const SizedBox(height: 6),
+              Text(guidance),
+              const SizedBox(height: 14),
+              ListTile(
+                leading: const Icon(Icons.event_available_rounded),
+                title: const Text('کار بعدی رو انتخاب کن'),
+                subtitle: const Text('یک درس بردار و با ۱۵ دقیقه شروع کن.'),
+                onTap: () { Navigator.pop(sheet); onPlan(); },
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_note_rounded),
+                title: const Text('نتیجه‌ات رو ثبت کن'),
+                subtitle: const Text('زمان مطالعه و تعداد تست‌هایی که زدی.'),
+                onTap: () { Navigator.pop(sheet); onReport(); },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
 class _CompanionPainter extends CustomPainter {
   const _CompanionPainter({required this.celebrating});
 
@@ -220,7 +266,7 @@ class _CompanionPainter extends CustomPainter {
       oldDelegate.celebrating != celebrating;
 }
 
-class ApexWeekChart extends StatelessWidget {
+class ApexWeekChart extends StatefulWidget {
   const ApexWeekChart({
     super.key,
     required this.title,
@@ -233,44 +279,76 @@ class ApexWeekChart extends StatelessWidget {
   final List<({String label, int value})> days;
 
   @override
+  State<ApexWeekChart> createState() => _ApexWeekChartState();
+}
+
+class _ApexWeekChartState extends State<ApexWeekChart> {
+  int? _selection;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final maximum = days.fold<int>(
-      1,
-      (highest, day) => math.max(day.value, highest),
-    );
+    final days = widget.days;
+    final selected = days.isEmpty ? 0 :
+        (_selection ?? days.length - 1).clamp(0, days.length - 1).toInt();
+    final maximum = days.fold<int>(1, (highest, day) => math.max(day.value, highest));
+    final total = days.fold<int>(0, (sum, day) => sum + day.value);
+    final colors = theme.colorScheme;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(title, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            for (final day in days)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: MergeSemantics(
-                    child: Row(
-                  children: [
-                    SizedBox(
-                      width: 49,
-                      child: Text(day.label, textDirection: TextDirection.ltr),
-                    ),
-                    Expanded(
+            Text(widget.title, style: theme.textTheme.titleMedium),
+            Text('مجموع ۷ روز: $total ${widget.unit}'),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (final (index, day) in days.indexed)
+                  Expanded(
+                    child: Semantics(
+                      button: true,
+                      onTap: () => setState(() => _selection = index),
+                      selected: index == selected,
+                      label: '${day.label}، ${day.value} ${widget.unit}',
                       child: ExcludeSemantics(
-                        child: LinearProgressIndicator(
-                          value: day.value < 0 ? 0 : day.value / maximum,
-                          minHeight: 8,
-                          borderRadius: BorderRadius.circular(8),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () => setState(() => _selection = index),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
+                            child: Column(
+                              children: [
+                                SizedBox(
+                                  height: 74,
+                                  child: Align(
+                                    alignment: Alignment.bottomCenter,
+                                    child: Container(
+                                      height: 4 + 70 * (day.value / maximum).clamp(0.0, 1.0).toDouble(),
+                                      width: 18,
+                                      decoration: BoxDecoration(
+                                        color: index == selected ? colors.primary : colors.primaryContainer,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                FittedBox(child: Text(day.label, textDirection: TextDirection.ltr)),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    SizedBox(width: 70, child: Text('${day.value} $unit')),
-                  ],
-                )),
-              ),
+                  ),
+              ],
+            ),
+            if (days.isNotEmpty)
+              Text('روز ${days[selected].label} • ${days[selected].value} ${widget.unit}',
+                  style: theme.textTheme.labelLarge),
           ],
         ),
       ),

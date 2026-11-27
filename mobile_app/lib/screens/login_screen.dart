@@ -31,7 +31,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) widget.onAuthenticated();
     } catch (error) {
       if (mounted) setState(() {
-        _error = error.toString().replaceFirst('Exception: ', '');
+        _error = error is StateError || error.toString().startsWith('Exception: ')
+            ? error.toString().replaceFirst('Exception: ', '').replaceFirst('Bad state: ', '')
+            : 'برقراری ارتباط ممکن نشد. اتصال را بررسی کنید.';
         _status = 'ورود تکمیل نشد.';
       });
     } finally {
@@ -54,19 +56,24 @@ class _LoginScreenState extends State<LoginScreen> {
         child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 420),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             const SizedBox(height: 32),
-            Container(height: 76, alignment: Alignment.center,
-              decoration: BoxDecoration(color: AppColors.sky, borderRadius: BorderRadius.circular(24)),
-              child: const Icon(Icons.spa_rounded, color: AppColors.primary, size: 42)),
-            const SizedBox(height: 22),
-            const Text('به ترنم همدلی خوش آمدید', textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900, color: AppColors.deepBlue)),
-            const SizedBox(height: 9),
-            const Text('ورود امن به همراهی تحصیلی و مسیر حال خوب', textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: AppColors.muted)),
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: AppColors.apexGradient,
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: const Column(children: [
+                Icon(Icons.auto_awesome_rounded, color: Color(0xFFAAEEE2), size: 36),
+                SizedBox(height: 10),
+                Text('Apex360', style: TextStyle(color: Colors.white, fontSize: 31,
+                  fontWeight: FontWeight.w900)),
+                Text('ترنم همدلی', style: TextStyle(color: Colors.white)),
+              ]),
+            ),
             const SizedBox(height: 34),
             Card(child: Padding(padding: const EdgeInsets.all(20),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                const Icon(Icons.send_rounded, size: 42, color: AppColors.primary),
+                const Icon(Icons.lock_outline_rounded, size: 34, color: AppColors.primary),
                 const SizedBox(height: 14),
                 const Text(_local ? 'ورود دانش‌آموز آزمایشی' : 'ورود با حساب تلگرام', textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.ink)),

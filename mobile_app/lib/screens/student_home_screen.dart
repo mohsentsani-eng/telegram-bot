@@ -3,6 +3,7 @@ import '../services/mobile_auth_service.dart';
 import '../theme/app_theme.dart';
 import 'student_sections.dart';
 import 'apex_demo_screen.dart';
+import 'apex_dashboard.dart';
 
 class StudentHomeScreen extends StatefulWidget {
   const StudentHomeScreen({super.key, required this.onLoggedOut});
@@ -64,7 +65,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           onDestinationSelected: _goToTab,
           destinations: const [
             NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'خانه'),
-            NavigationDestination(icon: Icon(Icons.calendar_month_outlined), label: 'برنامه'),
+            NavigationDestination(icon: Icon(Icons.calendar_month_outlined), label: 'برنامه مشاور'),
             NavigationDestination(icon: Icon(Icons.quiz_outlined), label: 'آزمون‌ها'),
             NavigationDestination(icon: Icon(Icons.insights_outlined), label: 'گزارش‌ها'),
             NavigationDestination(icon: Icon(Icons.person_outline), label: 'حساب من'),
@@ -95,7 +96,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               const SizedBox(height: 22),
               _dailyProgress(),
               const SizedBox(height: 20),
-              _counselorCard(),
+              InkWell(onTap: () => _goToTab(1), child: _counselorCard()),
               const SizedBox(height: 18),
               TextButton(
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
@@ -145,11 +146,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     padding: const EdgeInsets.all(20),
     decoration: BoxDecoration(
       borderRadius: BorderRadius.circular(24),
-      gradient: const LinearGradient(
-        begin: Alignment.topRight,
-        end: Alignment.bottomLeft,
-        colors: [AppColors.primary, AppColors.deepBlue],
-      ),
+      gradient: AppColors.apexGradient,
       boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: .16), blurRadius: 22, offset: const Offset(0, 10))],
     ),
     child: Column(
@@ -164,7 +161,14 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           ),
         ]),
         const SizedBox(height: 8),
-        const Text('قدم‌های کوچک امروز، پیشرفت‌های بزرگ فردا را می‌سازند.', style: TextStyle(color: Color(0xFFE5EEFF), fontSize: 13, height: 1.8)),
+        TextButton.icon(
+          style: TextButton.styleFrom(foregroundColor: const Color(0xFFAAEEE2)),
+          onPressed: () => showAva(context,
+              guidance: 'برنامه مشاور رو نگاه کن و یک فعالیت کوتاه برای شروع انتخاب کن.',
+              onPlan: () => _goToTab(1), onReport: () => _goToTab(3)),
+          icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+          label: const Text('از آوا کمک بگیر'),
+        ),
         const SizedBox(height: 18),
         InkWell(
           onTap: () => _goToTab(1),
@@ -203,7 +207,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           ),
           const SizedBox(width: 13),
           const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('برنامه مطالعاتی', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.ink)),
+            Text('برنامه مشاور', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.ink)),
             SizedBox(height: 4),
             Text('با ورود به برنامه، جزئیات فعالیت‌ها را ببین', style: TextStyle(fontSize: 11, color: AppColors.muted)),
           ])),
@@ -221,7 +225,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     crossAxisSpacing: 11,
     childAspectRatio: 1.8,
     children: [
-      _ActionTile(icon: Icons.calendar_month_rounded, title: 'برنامه مطالعاتی', subtitle: 'برنامه امروزت', tint: AppColors.sky, iconColor: AppColors.primary, onTap: () => _goToTab(1)),
+      _ActionTile(icon: Icons.calendar_month_rounded, title: 'برنامه مشاور', subtitle: 'مشاور و برنامه تخصیص‌یافته', tint: AppColors.sky, iconColor: AppColors.primary, onTap: () => _goToTab(1)),
       _ActionTile(icon: Icons.quiz_rounded, title: 'آزمون‌های من', subtitle: 'تمرین و ارزیابی', tint: const Color(0xFFF1EDFF), iconColor: const Color(0xFF7660B5), onTap: () => _goToTab(2)),
       _ActionTile(icon: Icons.timer_rounded, title: 'گزارش روزانه', subtitle: 'ثبت فعالیت روزانه', tint: const Color(0xFFFFF5E5), iconColor: const Color(0xFFB7791F), onTap: () => _goToTab(3)),
       _ActionTile(icon: Icons.favorite_rounded, title: 'حال خوب من', subtitle: 'حال و انگیزه امروز', tint: const Color(0xFFFFEDF0), iconColor: const Color(0xFFC45B72), onTap: _openWellbeing),
@@ -259,7 +263,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('همراهی مشاور', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.ink)),
           SizedBox(height: 4),
-          Text('ارتباط مستقیم پس از ورود امن به حساب فعال می‌شود.', style: TextStyle(fontSize: 11, color: AppColors.muted)),
+          Text('نام مشاور و آخرین برنامه منتشرشده', style: TextStyle(fontSize: 11, color: AppColors.muted)),
         ])),
         const Icon(Icons.arrow_back_ios_new_rounded, size: 15, color: AppColors.muted),
       ]),

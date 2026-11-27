@@ -184,12 +184,14 @@ def test_approved_challenge_expires_without_issuing_tokens(tmp_path, monkeypatch
 
 
 def test_local_api_login_plan_and_report_retry(tmp_path, monkeypatch):
+    import re
+
     from fastapi.testclient import TestClient
 
-    from tools.mobile_test_api import STUDENT_ID, create_app, seed
+    from tools.mobile_test_api import COUNSELOR_USERNAME, STUDENT_ID, create_app, seed
 
     monkeypatch.setattr(db, "DB", tmp_path / "apex-local.sqlite3")
-    seed()
+    seed("counselor-test-only")
     c = db.conn()
     try:
         other = c.execute(
@@ -200,14 +202,17 @@ def test_local_api_login_plan_and_report_retry(tmp_path, monkeypatch):
         c.close()
     db.save_plan(other, "Other student's plan", {"schedule": []})
     client = TestClient(create_app("test-only"))
-    assert client.get("/api/v1/mobile/student/study-plan").status_code == 401
+    route = "/api/v1/mobile/student/counselor"
+    assert client.get(route).status_code == 401
+    db.save_plan(STUDENT_ID, "برنامه شخصی", {"schedule": []})
     path = "/api/v1/mobile/auth/local"
     assert client.post(path, json={"code": "incorrect"}).status_code == 401
     login = client.post(path, json={"code": "test-only"}).json()
     headers = {"Authorization": "Bearer " + login["access_token"]}
     profile = client.get("/api/v1/mobile/student/profile", headers=headers)
     assert profile.json()["student_id"] == STUDENT_ID
-    plan = client.get("/api/v1/mobile/student/study-plan", headers=headers)
+    plan = client.get(route, headers=headers)
+    assert plan.json()["assignment"]["name"] == "مشاور آزمایشی ترنم"
     assert plan.json()["plan"]["title"] == "برنامه آزمایشی مشاور"
     assert plan.headers["Cache-Control"] == "no-store"
 
@@ -220,9 +225,28 @@ def test_local_api_login_plan_and_report_retry(tmp_path, monkeypatch):
     for _ in range(2):
         response = client.post(sync, json={"activities": [activity]}, headers=headers)
         assert response.json() == {"accepted_event_ids": [activity["event_id"]]}
+    assert client.post("/counselor/login", data={
+        "username": COUNSELOR_USERNAME, "password": "counselor-test-only",
+    }, follow_redirects=False).status_code == 303
+    page = client.get(f"/counselor/student/{STUDENT_ID}")
+    assert "گزارش‌های Apex360" in page.text and "تمرین" in page.text
+    csrf = re.search(r'name="csrf" value="([^"]+)"', page.text)[1]
+    form = {"csrf": csrf, "title": "برنامه تازه", "schedule": "شنبه | 18:00 | 18:45 | علوم"}
+    publish_url = f"/counselor/student/{STUDENT_ID}/plan"
+    assert client.post(publish_url, data={**form, "csrf": "wrong"}).status_code == 403
+    assert client.post(publish_url, data={**form, "schedule": "شنبه | 18:50 | 18:45 | علوم"}).status_code == 422
+    assert client.post(f"/counselor/student/{other}/plan", data=form).status_code == 403
+    assert client.post(publish_url, data=form, follow_redirects=False).status_code == 303
+    assert client.get(route, headers=headers).json()["plan"]["schedule"] == [["شنبه", 1080, 1125, "علوم"]]
+
+    db.assign_counselor(STUDENT_ID, db.add_counselor("مشاور تازه"))
+    reassigned = client.get(route, headers=headers).json()
+    assert reassigned["assignment"]["name"] == "مشاور تازه"
+    assert reassigned["plan"] is None
+    assert client.post(publish_url, data=form).status_code == 403
     c = db.conn()
     try:
         assert c.execute("SELECT COUNT(*) FROM mobile_study_activities").fetchone()[0] == 1
-        assert c.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 2
+        assert c.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 4
     finally:
         c.close()

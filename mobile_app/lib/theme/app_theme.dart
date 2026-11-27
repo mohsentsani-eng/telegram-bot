@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 
 abstract final class AppColors {
-  static const primary = Color(0xFF245FB5);
-  static const deepBlue = Color(0xFF173F78);
-  static const sky = Color(0xFFEAF3FF);
-  static const canvas = Color(0xFFF7F9FC);
+  static const primary = Color(0xFF58409F);
+  static const deepBlue = Color(0xFF392B65);
+  static const sky = Color(0xFFEFE9FC);
+  static const canvas = Color(0xFFF9F7FD);
   static const ink = Color(0xFF202B3C);
   static const muted = Color(0xFF68758A);
   static const warm = Color(0xFFF2B85B);
   static const success = Color(0xFF23865B);
+  static const apexGradient = LinearGradient(
+    begin: Alignment.topRight,
+    end: Alignment.bottomLeft,
+    colors: [Color(0xFF4B328D), Color(0xFF265087), Color(0xFF146469)],
+  );
   static const border = Color(0xFFE7ECF3);
 }
 

@@ -8,12 +8,16 @@ import json
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Response
 from pydantic import BaseModel, Field
 
 from . import db
 
-router = APIRouter(prefix="/api/v1/mobile", tags=["mobile-app"])
+def _disable_caching(response: Response):
+    response.headers["Cache-Control"] = "no-store"
+
+
+router = APIRouter(prefix="/api/v1/mobile", tags=["mobile-app"], dependencies=[Depends(_disable_caching)])
 BOT_USERNAME = "TaranomHamDeliBot"
 CHALLENGE_TTL_MINUTES = 5
 ACCESS_TTL_MINUTES = 15
@@ -77,6 +81,7 @@ def mobile_capabilities():
         "api_version": 1,
         "minimum_client_version": "0.1.0",
         "roles": ["student"],
+        "counselor_assignment": True,
         "authentication": "telegram-deep-link-approval",
         "offline": {
             "downloadable_study_plans": True,
@@ -84,11 +89,11 @@ def mobile_capabilities():
             "assessment_answer_queue": False,
             "daily_report_queue": True,
             "mood_checkin_queue": False,
-            "automatic_sync": False,
+            "automatic_sync": True,
         },
         "planned_offline_features": [
             "downloadable_assessments", "assessment_answer_queue",
-            "mood_checkin_queue", "automatic_sync",
+            "mood_checkin_queue",
         ],
         "online_only": ["live_messaging", "ai_analysis", "push_notification_delivery"],
     }
@@ -259,6 +264,12 @@ def sync_study_activities(
         raise
     finally:
         c.close()
+
+
+@router.get("/student/counselor")
+def mobile_counselor(authorization: str | None = Header(default=None)):
+    student = _authenticated_student(authorization)
+    return db.mobile_counselor_plan(student["id"])
 
 
 @router.get("/student/study-plan")
