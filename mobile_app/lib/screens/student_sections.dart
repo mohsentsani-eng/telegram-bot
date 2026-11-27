@@ -1,12 +1,82 @@
+import 'dart:async';
 import '../services/study_activity_store.dart';
 import '../services/mobile_auth_service.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
-class StudyPlanScreen extends StatelessWidget {
+class StudyPlanScreen extends StatefulWidget {
   const StudyPlanScreen({super.key});
+
   @override
-  Widget build(BuildContext context) => const _SimpleStudentPage(title: 'برنامه مطالعاتی', subtitle: 'قدم‌به‌قدم تا هدفی که براش تلاش می‌کنی', icon: Icons.calendar_month_rounded, items: ['شنبه  •  ریاضی  •  مرور و حل تمرین','یکشنبه  •  علوم  •  مطالعه درس جدید','دوشنبه  •  فارسی  •  تمرین و مرور']);
+  State<StudyPlanScreen> createState() => _StudyPlanScreenState();
+}
+
+class _StudyPlanScreenState extends State<StudyPlanScreen> {
+  final _auth = MobileAuthService();
+  Map<String, dynamic>? _plan;
+  bool _loading = false;
+  bool _offline = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      final id = await _auth.cachedStudentId();
+      if (id == null) throw StateError('حساب دانش‌آموز در دسترس نیست.');
+      final cached = await _auth.cachedStudyPlan(id);
+      if (!mounted) return;
+      setState(() => _plan = cached);
+      final plan = await _auth.fetchStudyPlan(id);
+      if (mounted) setState(() { _plan = plan; _offline = false; });
+    } catch (_) {
+      final id = await _auth.cachedStudentId();
+      if (mounted) setState(() {
+        if (id == null) _plan = null;
+        _offline = true;
+      });
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _time(int minutes) =>
+      '${(minutes ~/ 60).toString().padLeft(2, '0')}:${(minutes % 60).toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final schedule = _plan?['schedule'] as List<dynamic>? ?? [];
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('برنامه مطالعاتی'),
+        actions: [
+          IconButton(
+            tooltip: 'دریافت دوباره برنامه',
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: ListView(padding: const EdgeInsets.all(20), children: [
+        if (_loading) const LinearProgressIndicator(),
+        if (_offline)
+          Text(_plan == null ? 'دریافت برنامه ممکن نشد.' : 'نمایش آخرین برنامه ذخیره‌شده'),
+        if (!_loading && !_offline && _plan == null)
+          const Text('هنوز برنامه فعالی برای شما ثبت نشده است.'),
+        if (_plan != null) Text(_plan?['title'] as String? ?? 'برنامه مطالعاتی'),
+        for (final block in schedule.cast<List<dynamic>>())
+          ListTile(
+            title: Text('${block[0]} • ${block[3]}'),
+            subtitle: Text('${_time(block[1] as int)} تا ${_time(block[2] as int)}'),
+          ),
+      ]),
+    );
+  }
 }
 class TestsScreen extends StatelessWidget {
   const TestsScreen({super.key});
@@ -19,7 +89,8 @@ class DailyReportScreen extends StatefulWidget {
   State<DailyReportScreen> createState() => _DailyReportScreenState();
 }
 
-class _DailyReportScreenState extends State<DailyReportScreen> {
+class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindingObserver {
+  Timer? _retryTimer;
   final _store = StudyActivityStore();
   final _subject = TextEditingController();
   String _activityType = 'study';
@@ -34,7 +105,26 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_load().then((_) => _sync(quiet: true)));
+    _startRetryTimer();
+  }
+
+  void _startRetryTimer() {
+    _retryTimer?.cancel();
+    _retryTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(_sync(quiet: true));
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_sync(quiet: true));
+      _startRetryTimer();
+    } else {
+      _retryTimer?.cancel();
+    }
   }
 
   Future<void> _load() async {
@@ -83,6 +173,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('فعالیت روی گوشی ذخیره شد؛ هنوز به سرور ارسال نشده است.'),
       ));
+      unawaited(_sync(quiet: true));
     } catch (error) {
       if (mounted) setState(() => _error = error.toString().replaceFirst('Invalid argument(s): ', ''));
     } finally {
@@ -90,19 +181,21 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     }
   }
 
-  Future<void> _sync() async {
-    if (_studentId == null || _syncing) return;
+  Future<void> _sync({bool quiet = false}) async {
+    if (!mounted || _studentId == null || _syncing) return;
+    if (quiet && !_activities.any((item) => item['sync_state'] != 'synced')) return;
     setState(() => _syncing = true);
     try {
       final count = await MobileAuthService().syncStudyActivities(_studentId!, _store);
       final updated = await _store.read(_studentId!);
       if (!mounted) return;
       setState(() { _activities = updated; _error = null; });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      if (!quiet) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('$count فعالیت با سرور همگام شد.'),
       ));
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));
+    } catch (_) {
+      if (mounted && !quiet) setState(() => _error =
+          'ارسال کامل نشد. گزارش‌های تأییدنشده برای تلاش بعدی روی گوشی باقی ماندند.');
     } finally {
       if (mounted) setState(() => _syncing = false);
     }
@@ -110,6 +203,8 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
 
   @override
   void dispose() {
+    _retryTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _subject.dispose();
     super.dispose();
   }
@@ -161,7 +256,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       ),
       const SizedBox(height: 12),
       OutlinedButton.icon(
-        onPressed: _studentId == null || _syncing ? null : _sync,
+        onPressed: _studentId == null || _syncing ? null : () => _sync(),
         icon: const Icon(Icons.sync_rounded),
         label: Text(_syncing ? 'در حال همگام‌سازی...' : 'ارسال گزارش‌های ذخیره‌شده به سرور'),
       ),

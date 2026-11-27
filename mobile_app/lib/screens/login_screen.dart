@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/mobile_auth_service.dart';
+import 'apex_demo_screen.dart';
 import '../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -11,16 +12,22 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _auth = MobileAuthService();
+  final _code = TextEditingController();
+  static const _local = MobileAuthService.isLocalTest;
   bool _busy = false;
-  String _status = 'برای اتصال امن به پرونده دانش‌آموزی، با تلگرام وارد شوید.';
+  String _status = _local ? 'کد چاپ‌شده در API محلی را وارد کنید.' : 'برای اتصال امن به پرونده دانش‌آموزی، با تلگرام وارد شوید.';
   String? _error;
 
   Future<void> _login() async {
     setState(() { _busy = true; _error = null; _status = 'در حال آماده‌سازی ورود...'; });
     try {
-      await _auth.loginWithTelegram(onStatus: (message) {
+      if (_local) {
+        await _auth.loginLocally(_code.text.trim());
+      } else {
+        await _auth.loginWithTelegram(onStatus: (message) {
         if (mounted) setState(() => _status = message);
-      });
+        });
+      }
       if (mounted) widget.onAuthenticated();
     } catch (error) {
       if (mounted) setState(() {
@@ -30,6 +37,12 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
   }
 
   @override
@@ -55,7 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 const Icon(Icons.send_rounded, size: 42, color: AppColors.primary),
                 const SizedBox(height: 14),
-                const Text('ورود با حساب تلگرام', textAlign: TextAlign.center,
+                const Text(_local ? 'ورود دانش‌آموز آزمایشی' : 'ورود با حساب تلگرام', textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.ink)),
                 const SizedBox(height: 10),
                 Text(_status, textAlign: TextAlign.center,
@@ -66,18 +79,31 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: const TextStyle(color: Colors.red, fontSize: 12, height: 1.7)),
                 ],
                 const SizedBox(height: 20),
+                if (_local)
+                  TextField(
+                    controller: _code,
+                    obscureText: true,
+                    autocorrect: false,
+                    decoration: const InputDecoration(labelText: 'کد ورود آزمایشی'),
+                  ),
                 FilledButton.icon(
                   onPressed: _busy ? null : _login,
                   icon: _busy ? const SizedBox(width: 18, height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                     : const Icon(Icons.lock_open_rounded),
-                  label: Text(_busy ? 'در انتظار تأیید...' : 'ورود با تلگرام'),
+                  label: Text(_busy ? 'در انتظار تأیید...' : (_local ? 'ورود آزمایشی' : 'ورود با تلگرام')),
                   style: FilledButton.styleFrom(backgroundColor: AppColors.primary, minimumSize: const Size.fromHeight(52)),
                 ),
               ]))),
             const SizedBox(height: 18),
-            const Text('برای ورود، باید با همین حساب تلگرام در ربات رسمی ترنم همدلی پرونده دانش‌آموزی داشته باشید.',
+            if (!_local) const Text('برای ورود، باید با همین حساب تلگرام در ربات رسمی ترنم همدلی پرونده دانش‌آموزی داشته باشید.',
               textAlign: TextAlign.center, style: TextStyle(fontSize: 11, height: 1.8, color: AppColors.muted)),
+            TextButton(
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => const ApexDemoScreen(),
+              )),
+              child: const Text('باز کردن داشبورد آفلاین'),
+            ),
           ]),
         ),
       ))),

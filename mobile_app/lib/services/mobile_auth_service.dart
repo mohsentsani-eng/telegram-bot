@@ -1,34 +1,87 @@
 import 'study_activity_store.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 class MobileAuthService {
-  MobileAuthService({http.Client? client}) : _client = client ?? http.Client();
+  factory MobileAuthService({http.Client? client}) =>
+      client == null ? _shared : MobileAuthService._(client);
+
+  MobileAuthService._(this._client);
+  static final _shared = MobileAuthService._(http.Client());
   static const String _baseUrl = String.fromEnvironment(
     'API_BASE_URL', defaultValue: 'https://telegram-bot-production-5605.up.railway.app',
   );
   static const _storage = FlutterSecureStorage();
   final http.Client _client;
-  bool get isConfigured => _baseUrl.startsWith('https://');
+  static const isLocalTest =
+      kDebugMode && bool.fromEnvironment('APEX_LOCAL_TEST');
+  static const _localUrl = 'http://127.0.0.1:8765';
+  Future<bool>? _refreshing;
+  bool _loggingOut = false;
+  int _sessionGeneration = 0;
+
+  String get _endpoint => isLocalTest ? _localUrl : _baseUrl;
+  String _key(String key) => isLocalTest ? 'apex_local_$key' : key;
+  String _planKey(int id) => _key('study_plan_v1_$id');
+  bool get isConfigured {
+    final uri = Uri.tryParse(_endpoint);
+    return isLocalTest ||
+        (uri != null && uri.scheme == 'https' &&
+            uri.host.isNotEmpty && uri.userInfo.isEmpty);
+  }
+
+  Future<String?> _read(String key) => _storage.read(key: _key(key));
+
+  Future<void> _saveSession(Map<String, dynamic> tokens) async {
+    await _storage.write(
+        key: _key('mobile_access_token'), value: tokens['access_token'] as String);
+    await _storage.write(
+        key: _key('mobile_refresh_token'), value: tokens['refresh_token'] as String);
+  }
+
+  Future<void> loginLocally(String code) async {
+    if (!isLocalTest) throw StateError('ورود آزمایشی فعال نیست.');
+    final response = await _client.post(
+      Uri.parse('$_endpoint/api/v1/mobile/auth/local'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'code': code}),
+    ).timeout(const Duration(seconds: 8));
+    if (response.statusCode != 200) throw Exception('کد ورود آزمایشی پذیرفته نشد.');
+    await clearSession();
+    await _saveSession(jsonDecode(response.body) as Map<String, dynamic>);
+    await fetchStudentProfile();
+  }
 
   Future<void> clearSession() async {
-    await _storage.delete(key: 'mobile_access_token');
-    await _storage.delete(key: 'mobile_refresh_token');
-    await _storage.delete(key: 'cached_student_id');
+    _sessionGeneration++;
+    final id = await cachedStudentId();
+    if (id != null) await _storage.delete(key: _planKey(id));
+    await _storage.delete(key: _key('mobile_access_token'));
+    await _storage.delete(key: _key('mobile_refresh_token'));
+    await _storage.delete(key: _key('cached_student_id'));
   }
 
   /// Revoke the server session before clearing local credentials.
   /// If offline, credentials are cleared locally; the remote session expires later.
   Future<void> logout() async {
-    final access = await _storage.read(key: 'mobile_access_token');
-    final refresh = await _storage.read(key: 'mobile_refresh_token');
+    _loggingOut = true;
+    _sessionGeneration++;
     try {
+      // Wait for a rotating session to finish before revoking its new tokens.
+      try {
+        await _refreshing;
+      } on Exception {
+        // Logout still clears local credentials when refresh is unavailable.
+      }
+      final access = await _read('mobile_access_token');
+      final refresh = await _read('mobile_refresh_token');
       if (access != null && refresh != null) {
         await _client.post(
-          Uri.parse('$_baseUrl/api/v1/mobile/auth/logout'),
+          Uri.parse('$_endpoint/api/v1/mobile/auth/logout'),
           headers: {
             'Authorization': 'Bearer $access',
             'Content-Type': 'application/json',
@@ -39,106 +92,147 @@ class MobileAuthService {
     } catch (_) {
       // Local logout must work offline. The server token expires on its own.
     } finally {
-      await clearSession();
+      try {
+        await clearSession();
+      } finally {
+        _loggingOut = false;
+      }
     }
   }
 
   Future<bool> restoreSession() async {
-    if (!isConfigured) return false;
-    final refresh = await _storage.read(key: 'mobile_refresh_token');
-    if (refresh == null) return false;
     try {
-      final response = await _client.post(
-        Uri.parse('$_baseUrl/api/v1/mobile/auth/refresh'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'refresh_token': refresh}),
-      );
-      if (response.statusCode != 200) {
-        await clearSession();
-        return false;
-      }
-      final tokens = jsonDecode(response.body) as Map<String, dynamic>;
-      await _storage.write(key: 'mobile_access_token', value: tokens['access_token'] as String);
-      await _storage.write(key: 'mobile_refresh_token', value: tokens['refresh_token'] as String);
-      final identity = await _client.get(
-        Uri.parse('$_baseUrl/api/v1/mobile/auth/me'),
-        headers: {'Authorization': 'Bearer ${tokens['access_token']}'} ,
-      );
-      if (identity.statusCode != 200) {
-        await clearSession();
-        return false;
-      }
-      return true;
-    } catch (_) {
-      return false;
+      return await _refreshSession();
+    } on Exception {
+      // Keep the previously authenticated account available during outages.
+      return await _read('mobile_refresh_token') != null &&
+          await cachedStudentId() != null;
     }
   }
 
+  Future<bool> _refreshSession() =>
+      _refreshing ??= _rotateSession().whenComplete(() => _refreshing = null);
+
+  Future<bool> _rotateSession() async {
+    if (!isConfigured) return false;
+    final refresh = await _read('mobile_refresh_token');
+    if (refresh == null) return false;
+    final response = await _client.post(
+      Uri.parse('$_endpoint/api/v1/mobile/auth/refresh'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'refresh_token': refresh}),
+    ).timeout(const Duration(seconds: 8));
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await clearSession();
+      return false;
+    }
+    if (response.statusCode != 200) {
+      throw http.ClientException('Session refresh unavailable');
+    }
+    await _saveSession(jsonDecode(response.body) as Map<String, dynamic>);
+    return true;
+  }
+
+  Future<http.Response> _authenticatedRequest(
+      Future<http.Response> Function(String) send, {int? studentId}) async {
+    final generation = _sessionGeneration;
+    Future<http.Response> sendForCurrentSession(String token) async {
+      final validStudent = studentId == null || await cachedStudentId() == studentId;
+      if (!validStudent || _loggingOut || generation != _sessionGeneration) {
+        throw StateError('حساب دانش‌آموز تغییر کرده است.');
+      }
+      final response = await send(token);
+      if (_loggingOut || generation != _sessionGeneration) {
+        throw StateError('حساب دانش‌آموز تغییر کرده است.');
+      }
+      return response;
+    }
+    if (!isConfigured) throw StateError('نشانی سرور امن تنظیم نشده است.');
+    final access = await _read('mobile_access_token');
+    if (access == null) throw StateError('ابتدا وارد حساب خود شوید.');
+    final response = await sendForCurrentSession(access);
+    if (response.statusCode != 401) return response;
+    // A concurrent request may already have rotated this access token.
+    final current = await _read('mobile_access_token');
+    if (_loggingOut || generation != _sessionGeneration) {
+      throw StateError('حساب دانش‌آموز تغییر کرده است.');
+    }
+    if (current == access && !await _refreshSession()) {
+      throw StateError('نشست منقضی شده است. دوباره وارد شوید.');
+    }
+    final refreshed = await _read('mobile_access_token');
+    if (refreshed == null) throw StateError('دوباره وارد شوید.');
+    return sendForCurrentSession(refreshed);
+  }
+
+  Future<http.Response> _studentGet(String resource) => _authenticatedRequest(
+        (token) => _client.get(
+          Uri.parse('$_endpoint/api/v1/mobile/student/$resource'),
+          headers: {'Authorization': 'Bearer $token'},
+        ).timeout(const Duration(seconds: 8)),
+      );
+
+  Future<Map<String, dynamic>?> cachedStudyPlan(int studentId) async {
+    final raw = await _storage.read(key: _planKey(studentId));
+    return raw == null ? null : jsonDecode(raw) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>?> fetchStudyPlan(int studentId) async {
+    final response = await _studentGet('study-plan');
+    if (response.statusCode != 200 || await cachedStudentId() != studentId) {
+      throw StateError('دریافت برنامه ممکن نشد.');
+    }
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final plan = body['plan'] as Map<String, dynamic>?;
+    if (plan == null) {
+      await _storage.delete(key: _planKey(studentId));
+    } else {
+      await _storage.write(key: _planKey(studentId), value: jsonEncode(plan));
+    }
+    return plan;
+  }
+
   Future<int?> cachedStudentId() async {
-    final id = await _storage.read(key: 'cached_student_id');
+    final id = await _storage.read(key: _key('cached_student_id'));
     return id == null ? null : int.tryParse(id);
   }
 
   /// Fetches only the currently authenticated student's profile.
   /// Refreshes expired access credentials once; never accepts a student ID.
   Future<Map<String, dynamic>> fetchStudentProfile() async {
-    var access = await _storage.read(key: 'mobile_access_token');
-    if (access == null) throw Exception('ابتدا وارد حساب خود شوید.');
-    var response = await _client.get(
-      Uri.parse('$_baseUrl/api/v1/mobile/student/profile'),
-      headers: {'Authorization': 'Bearer $access'},
-    ).timeout(const Duration(seconds: 15));
-    if (response.statusCode == 401) {
-      final restored = await restoreSession();
-      if (!restored) throw Exception('نشست شما منقضی شده است. دوباره وارد شوید.');
-      access = await _storage.read(key: 'mobile_access_token');
-      if (access == null) throw Exception('ورود مجدد لازم است.');
-      response = await _client.get(
-        Uri.parse('$_baseUrl/api/v1/mobile/student/profile'),
-        headers: {'Authorization': 'Bearer $access'},
-      ).timeout(const Duration(seconds: 15));
-    }
+    final response = await _studentGet('profile');
     if (response.statusCode != 200) {
       throw Exception('دریافت مشخصات حساب ممکن نشد. دوباره تلاش کنید.');
     }
     final profile = jsonDecode(response.body) as Map<String, dynamic>;
     final id = (profile['student_id'] as num).toInt();
-    await _storage.write(key: 'cached_student_id', value: id.toString());
+    await _storage.write(key: _key('cached_student_id'), value: id.toString());
     return profile;
   }
 
   /// Send pending activities in batches, acknowledging only IDs confirmed by server.
   Future<int> syncStudyActivities(int studentId, StudyActivityStore store) async {
-    final profile = await fetchStudentProfile();
-    if ((profile['student_id'] as num).toInt() != studentId) {
+    if (await cachedStudentId() != studentId) {
       throw StateError('شناسه حساب با گزارش‌های محلی مطابقت ندارد.');
     }
-    var access = await _storage.read(key: 'mobile_access_token');
-    if (access == null) throw StateError('ابتدا وارد شوید.');
     final pending = (await store.read(studentId))
         .where((a) => a['sync_state'] != 'synced').toList();
     var synced = 0;
     for (var offset = 0; offset < pending.length; offset += 50) {
       final batch = pending.skip(offset).take(50).toList();
       Future<http.Response> send(String token) => _client.post(
-        Uri.parse('$_baseUrl/api/v1/mobile/student/study-activities/sync'),
+        Uri.parse('$_endpoint/api/v1/mobile/student/study-activities/sync'),
         headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
         body: jsonEncode({'activities': batch}),
       ).timeout(const Duration(seconds: 20));
-      var response = await send(access!);
-      if (response.statusCode == 401) {
-        if (!await restoreSession()) throw StateError('نشست منقضی شده است.');
-        access = await _storage.read(key: 'mobile_access_token');
-        if (access == null) throw StateError('ورود دوباره لازم است.');
-        response = await send(access);
-      }
+      final response = await _authenticatedRequest(send, studentId: studentId);
       if (response.statusCode != 200) {
         throw StateError('همگام‌سازی انجام نشد (کد ${response.statusCode}). گزارش‌ها روی گوشی باقی می‌مانند.');
       }
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       final ids = (body['accepted_event_ids'] as List<dynamic>).cast<String>();
       final expected = batch.map((e) => e['event_id'] as String).toSet();
-      if (ids.toSet().length != expected.length || !expected.containsAll(ids)) {
+      if (ids.length != expected.length || ids.toSet().length != expected.length || !expected.containsAll(ids)) {
         throw StateError('تأیید سرور با گزارش‌های ارسالی مطابقت ندارد.');
       }
       await store.markSynced(studentId, ids);
@@ -151,10 +245,10 @@ class MobileAuthService {
     if (!isConfigured) throw Exception('نشانی امن سرور هنوز در نسخه آزمایشی تنظیم نشده است.');
     onStatus('در حال ساخت درخواست ورود امن...');
     final created = await _client.post(
-      Uri.parse('$_baseUrl/api/v1/mobile/auth/challenge'),
+      Uri.parse('$_endpoint/api/v1/mobile/auth/challenge'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'platform': 'flutter'}),
-    );
+    ).timeout(const Duration(seconds: 8));
     if (created.statusCode == 404) {
       throw Exception('قابلیت ورود اپ هنوز روی سرور فعال نشده است. لطفاً منتظر نسخه متصل به سرور آزمایشی باشید.');
     }
@@ -167,6 +261,9 @@ class MobileAuthService {
     final challenge = jsonDecode(created.body) as Map<String, dynamic>;
     final challengeId = challenge['challenge_id'] as String;
     final verificationUrl = Uri.parse(challenge['verification_url'] as String);
+    if (verificationUrl.scheme != 'https' || verificationUrl.host != 't.me') {
+      throw Exception('پیوند تأیید ورود معتبر نیست.');
+    }
     final start = verificationUrl.queryParameters['start'];
     if (start == null) throw Exception('پیوند تأیید ورود معتبر نیست.');
     final parts = start.split('_');
@@ -180,16 +277,16 @@ class MobileAuthService {
     while (DateTime.now().isBefore(expiry)) {
       await Future<void>.delayed(Duration(seconds: (challenge['poll_interval_seconds'] as num).toInt()));
       final response = await _client.post(
-        Uri.parse('$_baseUrl/api/v1/mobile/auth/challenge/$challengeId'),
+        Uri.parse('$_endpoint/api/v1/mobile/auth/challenge/$challengeId'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'secret': secret}),
-      );
+      ).timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) throw Exception('بررسی وضعیت ورود ناموفق بود.');
       final result = jsonDecode(response.body) as Map<String, dynamic>;
       if (result['status'] == 'authenticated') {
-        await _storage.delete(key: 'cached_student_id');
-        await _storage.write(key: 'mobile_access_token', value: result['access_token'] as String);
-        await _storage.write(key: 'mobile_refresh_token', value: result['refresh_token'] as String);
+        await clearSession();
+        await _saveSession(result);
+        await fetchStudentProfile();
         onStatus('ورود با موفقیت تأیید شد.');
         return;
       }

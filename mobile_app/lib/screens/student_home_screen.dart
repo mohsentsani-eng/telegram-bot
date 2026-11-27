@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/mobile_auth_service.dart';
 import '../theme/app_theme.dart';
 import 'student_sections.dart';
+import 'apex_demo_screen.dart';
 
 class StudentHomeScreen extends StatefulWidget {
   const StudentHomeScreen({super.key, required this.onLoggedOut});
@@ -96,7 +97,12 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               const SizedBox(height: 20),
               _counselorCard(),
               const SizedBox(height: 18),
-              _syncStatus(),
+              TextButton(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const ApexDemoScreen(),
+                )),
+                child: const Text('باز کردن داشبورد آفلاین'),
+              ),
             ]),
           ),
         ),
@@ -260,15 +266,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     ),
   );
 
-  Widget _syncStatus() => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-    decoration: BoxDecoration(color: AppColors.sky, borderRadius: BorderRadius.circular(13)),
-    child: const Row(children: [
-      Icon(Icons.cloud_off_outlined, color: AppColors.primary, size: 17),
-      SizedBox(width: 8),
-      Expanded(child: Text('همگام‌سازی و ذخیره آفلاین هنوز در حال پیاده‌سازی است.', style: TextStyle(fontSize: 10, color: AppColors.deepBlue))),
-    ]),
-  );
+
 }
 
 class _ActionTile extends StatelessWidget {

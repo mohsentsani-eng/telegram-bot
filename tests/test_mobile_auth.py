@@ -181,3 +181,48 @@ def test_approved_challenge_expires_without_issuing_tokens(tmp_path, monkeypatch
     c = db.conn()
     assert c.execute("SELECT COUNT(*) FROM mobile_sessions").fetchone()[0] == 0
     c.close()
+
+
+def test_local_api_login_plan_and_report_retry(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from tools.mobile_test_api import STUDENT_ID, create_app, seed
+
+    monkeypatch.setattr(db, "DB", tmp_path / "apex-local.sqlite3")
+    seed()
+    c = db.conn()
+    try:
+        other = c.execute(
+            "INSERT INTO students(telegram_id,first_name,last_name,grade) VALUES(4,'B','B','B')"
+        ).lastrowid
+        c.commit()
+    finally:
+        c.close()
+    db.save_plan(other, "Other student's plan", {"schedule": []})
+    client = TestClient(create_app("test-only"))
+    assert client.get("/api/v1/mobile/student/study-plan").status_code == 401
+    path = "/api/v1/mobile/auth/local"
+    assert client.post(path, json={"code": "incorrect"}).status_code == 401
+    login = client.post(path, json={"code": "test-only"}).json()
+    headers = {"Authorization": "Bearer " + login["access_token"]}
+    profile = client.get("/api/v1/mobile/student/profile", headers=headers)
+    assert profile.json()["student_id"] == STUDENT_ID
+    plan = client.get("/api/v1/mobile/student/study-plan", headers=headers)
+    assert plan.json()["plan"]["title"] == "برنامه آزمایشی مشاور"
+    assert plan.headers["Cache-Control"] == "no-store"
+
+    activity = {
+        "event_id": "apex-offline-report-001", "subject": "ریاضی",
+        "activity_type": "practice", "duration_minutes": 45,
+        "test_count": 5, "created_at": "2026-11-27T12:00:00Z",
+    }
+    sync = "/api/v1/mobile/student/study-activities/sync"
+    for _ in range(2):
+        response = client.post(sync, json={"activities": [activity]}, headers=headers)
+        assert response.json() == {"accepted_event_ids": [activity["event_id"]]}
+    c = db.conn()
+    try:
+        assert c.execute("SELECT COUNT(*) FROM mobile_study_activities").fetchone()[0] == 1
+        assert c.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 2
+    finally:
+        c.close()

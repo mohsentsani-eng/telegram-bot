@@ -1,9 +1,10 @@
 """Telegram-verified authentication foundation for the Taranom Hamdeli mobile app.
 
-Only already-registered student Telegram accounts can approve a login. No student
-profile data is returned by these endpoints.
+Only already-registered student Telegram accounts can approve a login.
+Student endpoints derive ownership from the authenticated session.
 """
 import hashlib
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -78,16 +79,15 @@ def mobile_capabilities():
         "roles": ["student"],
         "authentication": "telegram-deep-link-approval",
         "offline": {
-            "downloadable_study_plans": False,
+            "downloadable_study_plans": True,
             "downloadable_assessments": False,
             "assessment_answer_queue": False,
-            "daily_report_queue": False,
+            "daily_report_queue": True,
             "mood_checkin_queue": False,
             "automatic_sync": False,
         },
         "planned_offline_features": [
-            "downloadable_study_plans", "downloadable_assessments",
-            "assessment_answer_queue", "daily_report_queue",
+            "downloadable_assessments", "assessment_answer_queue",
             "mood_checkin_queue", "automatic_sync",
         ],
         "online_only": ["live_messaging", "ai_analysis", "push_notification_delivery"],
@@ -259,6 +259,29 @@ def sync_study_activities(
         raise
     finally:
         c.close()
+
+
+@router.get("/student/study-plan")
+def mobile_study_plan(authorization: str | None = Header(default=None)):
+    student = _authenticated_student(authorization)
+    c = db.conn()
+    try:
+        row = c.execute(
+            """SELECT id,title,created_at,content_json FROM plans
+               WHERE student_id=? AND status='active' ORDER BY id DESC LIMIT 1""",
+            (student["id"],),
+        ).fetchone()
+    finally:
+        c.close()
+    if row is None:
+        return {"plan": None}
+    content = json.loads(row["content_json"] or "{}")
+    return {"plan": {
+        "id": row["id"],
+        "title": row["title"],
+        "created_at": row["created_at"],
+        "schedule": content.get("schedule", []),
+    }}
 
 
 @router.get("/student/profile")

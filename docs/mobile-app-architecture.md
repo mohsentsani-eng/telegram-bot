@@ -81,3 +81,26 @@ plans or sensitive assessment records.
 - Keep psychological assessment details behind explicit permissions.
 - Use HTTPS, secure token storage, backups, and audit logs.
 - Do not expose AI provider keys or database credentials in the mobile app.
+
+## آزمون محلی نسخه ۱۴
+
+APK امضاشدهٔ شاخهٔ `feature/mobile-app-foundation` در محیط آزمایشی از API حلقهٔ محلی استفاده می‌کند. برای اجرای آن روی تلفن دارای USB debugging یا شبیه‌ساز، از ریشهٔ مخزن اجرا کنید.
+
+```bash
+python -m venv .venv
+.venv/bin/python -m pip install 'fastapi>=0.115' uvicorn
+.venv/bin/python -m tools.mobile_test_api
+```
+
+در ترمینال دیگری اجرا کنید.
+
+```bash
+adb reverse tcp:8765 tcp:8765
+adb install -r app-debug.apk
+```
+
+با کد چاپ‌شده در ترمینال وارد حساب ساختگی شوید. برنامهٔ مشاور را باز کنید، API را موقتاً از دسترس گوشی خارج کنید (`adb reverse --remove tcp:8765`) و یک گزارش جدید ثبت کنید. سپس مسیر `adb reverse` را برقرار کنید و منتظر تلاش خودکار بعدی بمانید یا ارسال را از صفحهٔ گزارش‌ها بزنید. وضعیت گزارش باید به «همگام‌شده» تغییر کند. پایگاه موقت سرور با پایان اجرای آن حذف می‌شود و پس از اجرای مجدد، کد ورود تازه صادر می‌شود.
+
+«باز کردن داشبورد آفلاین» داده‌های قبلی را در همان قالب ذخیره‌سازی نسخهٔ ۱۳ نمایش می‌دهد. گزارش‌های این داشبورد پیشین در همان بخش باقی می‌مانند. گزارش‌های تازهٔ بخش حساب آزمایشی پس از تأیید شناسهٔ رویداد توسط API، همگام‌شده علامت می‌خورند.
+
+در ساخت متصل به سامانه، ورود با تأیید حساب تلگرام دانش‌آموز انجام می‌شود و `API_BASE_URL` باید HTTPS باشد. مسیر ورود با کد فقط در سرور محلی و APK آزمایشی فعال است.
