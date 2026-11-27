@@ -7,6 +7,7 @@ on:
       - 'mobile_app/**'
       - 'app/mobile_api.py'
       - 'app/db.py'
+      - 'app/migrations.py'
       - 'app/counselor_portal.py'
       - 'tools/*mobile*.py'
       - 'tests/test_mobile_auth.py'
@@ -76,7 +77,7 @@ jobs:
         run: |
           AAPT="$(find "${ANDROID_HOME}/build-tools" -name aapt -type f | sort -V | tail -1)"
           metadata="$("$AAPT" dump badging build/app/outputs/flutter-apk/app-debug.apk)"
-          grep -F "package: name='ir.taranomhamdeli.taranom_hamdeli' versionCode='43' versionName='0.15.0'" <<< "$metadata"
+          grep -F "package: name='ir.taranomhamdeli.taranom_hamdeli' versionCode='44' versionName='0.16.0'" <<< "$metadata"
       - name: Verify APK signature
         working-directory: mobile_app
         env:

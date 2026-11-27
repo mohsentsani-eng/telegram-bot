@@ -16,18 +16,18 @@ void main() {
   testWidgets('reads the version from package metadata across navigation', (tester) async {
     PackageInfo.setMockInitialValues(
       appName: 'Apex360', packageName: 'ir.taranomhamdeli.taranom_hamdeli',
-      version: '0.15.0', buildNumber: '43', buildSignature: '',
+      version: '0.16.0', buildNumber: '44', buildSignature: '',
     );
     FlutterSecureStorage.setMockInitialValues({});
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(const TaranomApp());
     await tester.pumpAndSettle();
-    expect(find.text('Apex360 · 0.15.0+43'), findsOneWidget);
+    expect(find.text('Apex360 · 0.16.0+44'), findsOneWidget);
     final offline = find.text('باز کردن داشبورد آفلاین');
     await tester.ensureVisible(offline);
     await tester.tap(offline);
     await tester.pumpAndSettle();
-    expect(find.text('Apex360 · 0.15.0+43'), findsOneWidget);
+    expect(find.text('Apex360 · 0.16.0+44'), findsOneWidget);
     expect(find.text('ابتدا پروفایل خود را تکمیل کنید'), findsOneWidget);
   });
 

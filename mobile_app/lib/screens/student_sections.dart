@@ -2,10 +2,13 @@ import 'dart:async';
 import '../services/study_activity_store.dart';
 import '../services/mobile_auth_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 
 class StudyPlanScreen extends StatefulWidget {
-  const StudyPlanScreen({super.key});
+  const StudyPlanScreen({super.key, this.active = true});
+
+  final bool active;
 
   @override
   State<StudyPlanScreen> createState() => _StudyPlanScreenState();
@@ -16,6 +19,35 @@ class _StudyPlanScreenState extends State<StudyPlanScreen> with WidgetsBindingOb
   Map<String, dynamic>? _counselor;
   bool _loading = false;
   bool _offline = false;
+  bool _confirming = false;
+  String? _receiptError;
+
+  @override
+  void didUpdateWidget(covariant StudyPlanScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active) unawaited(_load());
+  }
+
+  Future<void> _confirm(int planId) async {
+    if (_confirming || _loading) return;
+    setState(() {
+      _confirming = true;
+      _receiptError = null;
+    });
+    try {
+      final id = await _auth.cachedStudentId();
+      if (id == null) throw StateError('Student session unavailable');
+      final context = await _auth.confirmPlan(id, planId);
+      if (mounted) setState(() => _counselor = context);
+    } catch (_) {
+      if (mounted) setState(() {
+        _receiptError = 'تأیید دریافت انجام نشد. برنامه را تازه‌سازی و دوباره تلاش کن.';
+      });
+    } finally {
+      if (mounted) setState(() => _confirming = false);
+    }
+  }
+
 
   @override
   void initState() {
@@ -36,8 +68,11 @@ class _StudyPlanScreenState extends State<StudyPlanScreen> with WidgetsBindingOb
   }
 
   Future<void> _load() async {
-    if (!mounted || _loading) return;
-    setState(() => _loading = true);
+    if (!mounted || _loading || _confirming) return;
+    setState(() {
+      _loading = true;
+      _receiptError = null;
+    });
     try {
       final id = await _auth.cachedStudentId();
       if (id == null) throw StateError('حساب دانش‌آموز در دسترس نیست.');
@@ -71,7 +106,7 @@ class _StudyPlanScreenState extends State<StudyPlanScreen> with WidgetsBindingOb
         actions: [
           IconButton(
             tooltip: 'دریافت دوباره برنامه',
-            onPressed: _loading ? null : _load,
+            onPressed: _loading || _confirming ? null : _load,
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -102,6 +137,20 @@ class _StudyPlanScreenState extends State<StudyPlanScreen> with WidgetsBindingOb
             title: Text('${block[0]} • ${block[3]}'),
             subtitle: Text('${_time(block[1] as int)} تا ${_time(block[2] as int)}'),
           ),
+        if (plan != null)
+          if (plan['received_at'] != null)
+            const ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.check_circle_outline),
+              title: Text('دریافت برنامه تأیید شده است'),
+            )
+          else
+            OutlinedButton.icon(
+              onPressed: _loading || _confirming || _offline ? null : () => _confirm(plan['id'] as int),
+              icon: const Icon(Icons.download_done_rounded),
+              label: Text(_confirming ? 'در حال تأیید…' : 'تأیید دریافت برنامه'),
+            ),
+        if (_receiptError != null) Text(_receiptError!),
       ]),
     );
   }
@@ -112,7 +161,10 @@ class TestsScreen extends StatelessWidget {
   Widget build(BuildContext context) => const _SimpleStudentPage(title: 'آزمون‌های من', subtitle: 'تمرین کن، یاد بگیر و پیشرفتت رو ببین', icon: Icons.quiz_rounded, items: ['آزمون تمرینی ریاضی  •  ۱۵ سؤال','مرور علوم  •  ۱۰ سؤال','آزمون مهارت‌های یادگیری  •  دانلود نشده']);
 }
 class DailyReportScreen extends StatefulWidget {
-  const DailyReportScreen({super.key});
+  const DailyReportScreen({super.key, this.active = true, this.onActivitiesChanged});
+
+  final bool active;
+  final ValueChanged<List<Map<String, dynamic>>>? onActivitiesChanged;
   @override
   State<DailyReportScreen> createState() => _DailyReportScreenState();
 }
@@ -122,8 +174,11 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
   final _store = StudyActivityStore();
   final _subject = TextEditingController();
   String _activityType = 'study';
-  int _minutes = 45;
-  int _tests = 0;
+  final _minutes = TextEditingController(text: '45');
+  final _tests = TextEditingController(text: '0');
+  List<Map<String, dynamic>> _feedback = [];
+  bool _feedbackLoading = false;
+  bool _feedbackUnavailable = false;
   int? _studentId;
   bool _saving = false;
   bool _syncing = false;
@@ -140,6 +195,29 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
     _startRetryTimer();
   }
 
+  @override
+  void didUpdateWidget(covariant DailyReportScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active) unawaited(_loadFeedback());
+  }
+
+  Future<void> _loadFeedback() async {
+    final id = _studentId;
+    if (!mounted || id == null || _feedbackLoading) return;
+    setState(() => _feedbackLoading = true);
+    try {
+      final feedback = await MobileAuthService().fetchReportFeedback(id);
+      if (mounted) setState(() {
+        _feedback = feedback;
+        _feedbackUnavailable = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _feedbackUnavailable = true);
+    } finally {
+      if (mounted) setState(() => _feedbackLoading = false);
+    }
+  }
+
   void _startRetryTimer() {
     _retryTimer?.cancel();
     _retryTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -151,6 +229,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_sync(quiet: true));
+      if (widget.active) unawaited(_loadFeedback());
       _startRetryTimer();
     } else {
       _retryTimer?.cancel();
@@ -162,15 +241,18 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
       final profile = await MobileAuthService().fetchStudentProfile();
       final studentId = (profile['student_id'] as num).toInt();
       final activities = await _store.read(studentId);
+      if (mounted) widget.onActivitiesChanged?.call(activities);
       if (mounted) setState(() {
         _studentId = studentId;
         _activities = activities;
         _error = null;
       });
+      if (widget.active) unawaited(_loadFeedback());
     } catch (_) {
       final cached = await MobileAuthService().cachedStudentId();
       if (cached != null) {
         final activities = await _store.read(cached);
+        if (mounted) widget.onActivitiesChanged?.call(activities);
         if (mounted) setState(() {
           _studentId = cached;
           _activities = activities;
@@ -190,8 +272,8 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
         studentId: _studentId!,
         subject: _subject.text,
         activityType: _activityType,
-        durationMinutes: _minutes,
-        testCount: _tests,
+        durationMinutes: int.tryParse(_minutes.text) ?? 0,
+        testCount: int.tryParse(_tests.text) ?? -1,
       );
       final updated = await _store.read(_studentId!);
       if (!mounted) return;
@@ -199,6 +281,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
         _activities = updated;
         _error = null;
       });
+      widget.onActivitiesChanged?.call(updated);
       _subject.clear();
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('فعالیت روی گوشی ذخیره شد؛ هنوز به سرور ارسال نشده است.'),
@@ -239,29 +322,30 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
     _retryTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _subject.dispose();
+    _minutes.dispose();
+    _tests.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('ثبت مطالعه'), backgroundColor: AppColors.canvas),
-    body: ListView(padding: const EdgeInsets.all(20), children: [
-      const Text('مطالعه امروزت رو ثبت کن', style: TextStyle(
-        fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.ink)),
-      const SizedBox(height: 12),
+    body: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 10), children: [
       Card(child: ListTile(
         leading: Icon(_retryNeeded ? Icons.cloud_off_outlined : Icons.cloud_sync_outlined),
-        title: Text(_syncing ? 'در حال ارسال' : '$_pending گزارش در صف ارسال'),
+        title: Text(_syncing ? 'در حال ارسال' : _pending > 0
+            ? '$_pending گزارش در صف ارسال'
+            : _activities.isEmpty ? 'هنوز گزارشی ثبت نشده' : 'ارسال گزارش‌ها تأیید شده'),
         subtitle: Text(_retryNeeded
             ? 'ارسال در آخرین تلاش کامل نشد. گزارش‌ها روی گوشی محفوظ‌اند.'
             : 'هنگام باز بودن برنامه، ارسال دوباره به‌صورت خودکار انجام می‌شود.'),
       )),
       const SizedBox(height: 16),
       TextField(controller: _subject, maxLength: 80,
-        decoration: const InputDecoration(labelText: 'نام درس', hintText: 'مثلاً زیست‌شناسی')),
+        decoration: const InputDecoration(labelText: 'نام درس', hintText: 'مثلاً زیست‌شناسی', counterText: '')),
       const SizedBox(height: 10),
       DropdownButtonFormField<String>(
-        value: _activityType,
+        initialValue: _activityType,
         decoration: const InputDecoration(labelText: 'نوع فعالیت'),
         items: const [
           DropdownMenuItem(value: 'study', child: Text('مطالعه')),
@@ -271,14 +355,12 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
         ],
         onChanged: (value) => setState(() => _activityType = value ?? 'study'),
       ),
-      const SizedBox(height: 18),
-      Text('مدت فعالیت: $_minutes دقیقه', style: const TextStyle(fontWeight: FontWeight.w700)),
-      Slider(value: _minutes.toDouble(), min: 5, max: 180, divisions: 35,
-        onChanged: (v) => setState(() => _minutes = v.round())),
       const SizedBox(height: 10),
-      Text('تعداد تست: $_tests', style: const TextStyle(fontWeight: FontWeight.w700)),
-      Slider(value: _tests.toDouble(), min: 0, max: 100, divisions: 100,
-        onChanged: (v) => setState(() => _tests = v.round())),
+      Row(children: [
+        Expanded(child: _numberField(_minutes, 'دقیقه مطالعه')),
+        const SizedBox(width: 10),
+        Expanded(child: _numberField(_tests, 'تعداد تست')),
+      ]),
       if (_error != null) ...[
         const SizedBox(height: 8),
         Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
@@ -296,6 +378,25 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
         icon: const Icon(Icons.sync_rounded),
         label: Text(_syncing ? 'در حال همگام‌سازی...' : 'ارسال گزارش‌های ذخیره‌شده به سرور'),
       ),
+      const SizedBox(height: 16),
+      Row(children: [
+        Expanded(child: Text('بازخورد مشاور', style: Theme.of(context).textTheme.titleMedium)),
+        IconButton(
+          tooltip: 'دریافت بازخورد',
+          onPressed: _studentId == null || _feedbackLoading ? null : _loadFeedback,
+          icon: const Icon(Icons.refresh),
+        ),
+      ]),
+      if (_feedbackLoading) const LinearProgressIndicator(),
+      if (_feedbackUnavailable) const Text('تازه‌سازی بازخورد ممکن نشد.'),
+      if (_feedback.isEmpty && !_feedbackLoading && !_feedbackUnavailable)
+        const Text('هنوز بازخوردی دریافت نشده است.'),
+      for (final item in _feedback)
+        Card(child: ListTile(
+          leading: const Icon(Icons.chat_bubble_outline),
+          title: Text('${item['subject']} · ${item['counselor_name']}'),
+          subtitle: Text(item['message'] as String),
+        )),
       const SizedBox(height: 24),
       Text('فعالیت‌های ثبت‌شده (${_activities.length})',
         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
@@ -311,6 +412,24 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
         )),
     ]),
   );
+
+  Widget _numberField(TextEditingController controller, String label) => TextField(
+    controller: controller,
+    keyboardType: TextInputType.number,
+    inputFormatters: [
+      TextInputFormatter.withFunction((oldValue, newValue) {
+        final text = newValue.text.replaceAllMapped(RegExp(r'[۰-۹٠-٩]'), (match) {
+          final digit = match[0]!.codeUnitAt(0);
+          return (digit >= 0x06f0 ? digit - 0x06f0 : digit - 0x0660).toString();
+        });
+        return newValue.copyWith(text: text);
+      }),
+      FilteringTextInputFormatter.digitsOnly,
+      LengthLimitingTextInputFormatter(4),
+    ],
+    decoration: InputDecoration(labelText: label),
+  );
+
 }
 
 class WellbeingScreen extends StatefulWidget {

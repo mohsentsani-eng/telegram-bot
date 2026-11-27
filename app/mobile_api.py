@@ -82,6 +82,8 @@ def mobile_capabilities():
         "minimum_client_version": "0.1.0",
         "roles": ["student"],
         "counselor_assignment": True,
+        "plan_receipts": True,
+        "report_feedback": True,
         "authentication": "telegram-deep-link-approval",
         "offline": {
             "downloadable_study_plans": True,
@@ -258,7 +260,7 @@ def sync_study_activities(
                 raise HTTPException(status_code=409, detail="event_id_conflict")
             accepted.append(item.event_id)
         c.commit()
-        return {"accepted_event_ids": accepted}
+        return {"accepted_event_ids": list(dict.fromkeys(accepted))}
     except Exception:
         c.rollback()
         raise
@@ -272,6 +274,21 @@ def mobile_counselor(authorization: str | None = Header(default=None)):
     return db.mobile_counselor_plan(student["id"])
 
 
+@router.post("/student/counselor/plans/{plan_id}/receipt")
+def receive_counselor_plan(plan_id: int, authorization: str | None = Header(default=None)):
+    student = _authenticated_student(authorization)
+    received_at = db.acknowledge_mobile_plan(student["id"], plan_id)
+    if received_at is None:
+        raise HTTPException(status_code=404, detail="plan_not_available")
+    return {"plan_id": plan_id, "received_at": received_at}
+
+
+@router.get("/student/study-activities/feedback")
+def student_report_feedback(authorization: str | None = Header(default=None)):
+    student = _authenticated_student(authorization)
+    return {"feedback": db.mobile_report_feedback(student["id"])}
+
+
 @router.get("/student/study-plan")
 def mobile_study_plan(authorization: str | None = Header(default=None)):
     student = _authenticated_student(authorization)
@@ -279,7 +296,15 @@ def mobile_study_plan(authorization: str | None = Header(default=None)):
     try:
         row = c.execute(
             """SELECT id,title,created_at,content_json FROM plans
-               WHERE student_id=? AND status='active' ORDER BY id DESC LIMIT 1""",
+               WHERE student_id=? AND status='active'
+                 AND CASE WHEN json_valid(content_json) THEN
+                       CASE WHEN json_extract(content_json,'$.source')='counselor' THEN EXISTS (
+                     SELECT 1 FROM student_counselor_assignments a
+                     JOIN counselors co ON co.id=a.counselor_id
+                     WHERE a.student_id=plans.student_id AND a.active=1 AND co.active=1
+                       AND a.id=json_extract(plans.content_json,'$.assignment_id')
+                 ) ELSE 1 END ELSE 1 END
+               ORDER BY id DESC LIMIT 1""",
             (student["id"],),
         ).fetchone()
     finally:

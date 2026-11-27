@@ -1,13 +1,17 @@
 """Loopback-only Apex360 API with a temporary database and a synthetic student."""
+import html
 import os
 import secrets
 from tempfile import TemporaryDirectory
 from pathlib import Path
+from contextlib import closing
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, Form, HTTPException, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import counselor_portal, db, migrations, mobile_api
 
@@ -20,8 +24,10 @@ class LocalLogin(BaseModel):
     code: str = Field(min_length=1, max_length=128)
 
 
-def create_app(code: str) -> FastAPI:
+def create_app(code: str, *, telegram_id=TELEGRAM_ID, operator_code=None,
+               counselor_id=None) -> FastAPI:
     app = FastAPI()
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
     app.add_middleware(SessionMiddleware, secret_key=secrets.token_urlsafe(32))
     app.include_router(mobile_api.router)
     app.include_router(counselor_portal.router)
@@ -38,28 +44,92 @@ def create_app(code: str) -> FastAPI:
             raise HTTPException(status_code=401, detail="invalid_test_code")
         c = db.conn()
         try:
-            tokens = mobile_api._new_session(c, TELEGRAM_ID)
+            registered = c.execute(
+                "SELECT 1 FROM students WHERE telegram_id=? AND registered=1", (telegram_id,),
+            ).fetchone()
+            if not registered:
+                raise HTTPException(409, "demo_registration_required")
+            tokens = mobile_api._new_session(c, telegram_id)
             c.commit()
             return tokens
         finally:
             c.close()
 
+    if operator_code and counselor_id is not None:
+        @app.get("/demo", response_class=HTMLResponse)
+        def demo_setup():
+            with closing(db.conn()) as c, c:
+                student = c.execute(
+                    """SELECT s.id,s.first_name,s.last_name,
+                              EXISTS(SELECT 1 FROM student_counselor_assignments a
+                                     WHERE a.student_id=s.id AND a.active=1) assigned
+                       FROM students s WHERE s.telegram_id=?""", (telegram_id,),
+                ).fetchone()
+            if student is None:
+                fields = """
+                <label>نام <input name="first_name" value="آرین" required maxlength="40"></label>
+                <label>نام خانوادگی <input name="last_name" value="نمونه" required maxlength="40"></label>
+                <button name="action" value="register">ثبت دانش‌آموز ساختگی</button>"""
+            elif not student["assigned"]:
+                name = html.escape(f"{student['first_name']} {student['last_name']}")
+                fields = f"<p>{name} ثبت شد.</p><button name='action' value='assign'>تخصیص مشاور آزمایشی</button>"
+            else:
+                fields = ""
+            body = """<meta charset="utf-8"><meta name="viewport" content="width=device-width">
+                <title>نمایش Apex360</title><main dir="rtl"><h1>آماده‌سازی نمایش Apex360</h1>
+                <p>از نام و مشخصات ساختگی استفاده کنید.</p>"""
+            if fields:
+                body += f"""<form method="post"><label>کد راه‌اندازی
+                    <input name="code" type="password" required></label>{fields}</form>"""
+            else:
+                body += '<p>دانش‌آموز و مشاور آماده‌اند.</p><a href="/counselor/login">ورود مشاور</a>'
+            return body + "</main>"
+
+        @app.post("/demo")
+        def change_demo(action: str = Form(...), code: str = Form(..., max_length=128),
+                        first_name: str = Form("", max_length=40),
+                        last_name: str = Form("", max_length=40)):
+            if not secrets.compare_digest(code.encode(), operator_code.encode()):
+                raise HTTPException(403, "invalid_operator_code")
+            if action == "register":
+                if not first_name.strip() or not last_name.strip():
+                    raise HTTPException(422, "demo_name_required")
+                with closing(db.conn()) as c, c:
+                    c.execute(
+                        """INSERT INTO students(id,telegram_id,first_name,last_name,grade)
+                           VALUES (?,?,?,?,'دهم') ON CONFLICT(telegram_id) DO NOTHING""",
+                        (telegram_id, telegram_id, first_name.strip(), last_name.strip()),
+                    )
+            elif action == "assign":
+                with closing(db.conn()) as c, c:
+                    row = c.execute(
+                        "SELECT id FROM students WHERE telegram_id=?", (telegram_id,),
+                    ).fetchone()
+                    if row is None:
+                        raise HTTPException(409, "demo_registration_required")
+                    c.execute(
+                        """INSERT INTO student_counselor_assignments(student_id,counselor_id,active)
+                           SELECT ?,?,1 WHERE NOT EXISTS (
+                             SELECT 1 FROM student_counselor_assignments WHERE student_id=? AND active=1
+                           )""", (row["id"], counselor_id, row["id"]),
+                    )
+            else:
+                raise HTTPException(422, "invalid_demo_step")
+            return RedirectResponse("/demo", status_code=303)
+
     return app
 
 
-def seed(counselor_password: str):
+def seed(counselor_password: str, *, preconfigured=True):
     db.init_db()
     migrations.migrate()
-    c = db.conn()
-    try:
-        c.execute(
-            """INSERT INTO students(id, telegram_id, first_name, last_name, grade)
-               VALUES (?, ?, 'دانش‌آموز', 'آزمایشی', 'دهم')""",
-            (STUDENT_ID, TELEGRAM_ID),
-        )
-        c.commit()
-    finally:
-        c.close()
+    if preconfigured:
+        with closing(db.conn()) as c, c:
+            c.execute(
+                """INSERT INTO students(id, telegram_id, first_name, last_name, grade)
+                   VALUES (?, ?, 'دانش‌آموز', 'آزمایشی', 'دهم')""",
+                (STUDENT_ID, TELEGRAM_ID),
+            )
     counselor_id = db.add_counselor("مشاور آزمایشی ترنم")
     c = db.conn()
     try:
@@ -70,10 +140,12 @@ def seed(counselor_password: str):
         c.commit()
     finally:
         c.close()
-    db.assign_counselor(STUDENT_ID, counselor_id)
-    db.publish_counselor_plan(STUDENT_ID, counselor_id, "برنامه آزمایشی مشاور", [
-        ["شنبه", 960, 1005, "ریاضی"], ["یکشنبه", 1020, 1065, "زیست"],
-    ])
+    if preconfigured:
+        db.assign_counselor(STUDENT_ID, counselor_id)
+        db.publish_counselor_plan(STUDENT_ID, counselor_id, "برنامه آزمایشی مشاور", [
+            ["شنبه", 960, 1005, "ریاضی"], ["یکشنبه", 1020, 1065, "زیست"],
+        ])
+    return counselor_id
 
 
 def main():
@@ -81,10 +153,15 @@ def main():
         db.DB = Path(directory) / "test.sqlite3"
         code = secrets.token_urlsafe(18)
         counselor_password = secrets.token_urlsafe(18)
-        seed(counselor_password)
+        operator_code = secrets.token_urlsafe(18)
+        # A new server run uses a different account so old device queues stay scoped.
+        telegram_id = -(2**40 + secrets.randbits(40))
+        counselor_id = seed(counselor_password, preconfigured=False)
+        print(f"Apex360 demo setup: /demo — operator code: {operator_code}", flush=True)
         print(f"Apex360 local student code: {code}", flush=True)
         print(f"Apex360 local counselor: {COUNSELOR_USERNAME} / {counselor_password}", flush=True)
-        uvicorn.run(create_app(code), host="127.0.0.1",
+        uvicorn.run(create_app(code, telegram_id=telegram_id, operator_code=operator_code,
+                               counselor_id=counselor_id), host="127.0.0.1",
                     port=int(os.environ.get("APEX_TEST_PORT", "8765")),
                     access_log=False)
 

@@ -15,7 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _code = TextEditingController();
   static const _local = MobileAuthService.isLocalTest;
   bool _busy = false;
-  String _status = _local ? 'کد چاپ‌شده در API محلی را وارد کنید.' : 'برای اتصال امن به پرونده دانش‌آموزی، با تلگرام وارد شوید.';
+  String _status = _local ? 'پس از ثبت دانش‌آموز ساختگی، کد ورود آزمایشی را وارد کنید.' : 'برای اتصال امن به پرونده دانش‌آموزی، با تلگرام وارد شوید.';
   String? _error;
 
   Future<void> _login() async {

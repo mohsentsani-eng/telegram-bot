@@ -67,12 +67,7 @@ class ApexDashboard extends StatelessWidget {
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    ExcludeSemantics(
-                      child: CustomPaint(
-                        size: const Size(66, 66),
-                        painter: _CompanionPainter(celebrating: allDone),
-                      ),
-                    ),
+                    AvaCompanion(celebrating: allDone),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
@@ -95,7 +90,8 @@ class ApexDashboard extends StatelessWidget {
                     label: const Text('از آوا کمک بگیر'),
                   ),
                 ),
-                const SizedBox(height: 18),
+                if (tasks.isNotEmpty) ...[
+                const SizedBox(height: 10),
                 LinearProgressIndicator(
                   value: tasks.isEmpty ? 0 : done / tasks.length,
                   color: const Color(0xFFAAEEE2),
@@ -109,6 +105,7 @@ class ApexDashboard extends StatelessWidget {
                   '$done از ${tasks.length} تکلیف انجام شده',
                   style: const TextStyle(color: Colors.white),
                 ),
+                ],
               ],
             ),
           ),
@@ -126,6 +123,16 @@ class ApexDashboard extends StatelessWidget {
               avatar: const Icon(Icons.quiz_outlined),
               label: Text('$tests تست'),
             ),
+            if (reports.isNotEmpty)
+              const Chip(
+                avatar: Icon(Icons.eco_outlined),
+                label: Text('نشان یک قدم'),
+              ),
+            if (done > 0)
+              const Chip(
+                avatar: Icon(Icons.verified_outlined),
+                label: Text('نشان انجام هدف'),
+              ),
           ],
         ),
         const SizedBox(height: 12),
@@ -146,7 +153,7 @@ class ApexDashboard extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 20),
-        Text('مأموریت‌های امروز', style: theme.textTheme.titleLarge),
+        Text('هدف‌های امروز', style: theme.textTheme.titleLarge),
         const SizedBox(height: 6),
         if (tasks.isEmpty) const Text('هنوز تکلیفی برای امروز ثبت نشده است.'),
         for (final task in tasks)
@@ -200,6 +207,20 @@ Future<void> showAva(BuildContext context, {
         ),
       ),
     );
+
+class AvaCompanion extends StatelessWidget {
+  const AvaCompanion({super.key, required this.celebrating});
+
+  final bool celebrating;
+
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+    child: CustomPaint(
+      size: const Size(66, 66),
+      painter: _CompanionPainter(celebrating: celebrating),
+    ),
+  );
+}
 
 class _CompanionPainter extends CustomPainter {
   const _CompanionPainter({required this.celebrating});
@@ -293,7 +314,11 @@ class _ApexWeekChartState extends State<ApexWeekChart> {
         (_selection ?? days.length - 1).clamp(0, days.length - 1).toInt();
     final maximum = days.fold<int>(1, (highest, day) => math.max(day.value, highest));
     final total = days.fold<int>(0, (sum, day) => sum + day.value);
-    final colors = theme.colorScheme;
+    const barColors = [
+      Color(0xFF8762D0), Color(0xFF4A8ECE), Color(0xFF279A89),
+      Color(0xFFC17162), Color(0xFF9964AF), Color(0xFF548B5D),
+      Color(0xFFBE8242),
+    ];
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -329,7 +354,12 @@ class _ApexWeekChartState extends State<ApexWeekChart> {
                                       height: 4 + 70 * (day.value / maximum).clamp(0.0, 1.0).toDouble(),
                                       width: 18,
                                       decoration: BoxDecoration(
-                                        color: index == selected ? colors.primary : colors.primaryContainer,
+                                        color: barColors[index % barColors.length].withValues(
+                                          alpha: index == selected ? 1 : .65,
+                                        ),
+                                        border: index == selected
+                                            ? Border.all(color: theme.colorScheme.onSurface, width: 1.5)
+                                            : null,
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                     ),

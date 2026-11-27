@@ -215,6 +215,29 @@ class MobileAuthService {
     return data;
   }
 
+  Future<Map<String, dynamic>> confirmPlan(int studentId, int planId) async {
+    final response = await _authenticatedRequest(
+      (token) => _post(
+        Uri.parse('$_endpoint/api/v1/mobile/student/counselor/plans/$planId/receipt'),
+        headers: {'Authorization': 'Bearer $token'},
+      ).timeout(const Duration(seconds: 8)),
+      studentId: studentId,
+    );
+    if (response.statusCode != 200) {
+      throw StateError('تأیید دریافت برنامه ممکن نشد.');
+    }
+    return fetchCounselor(studentId);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchReportFeedback(int studentId) async {
+    final response = await _studentGet('study-activities/feedback', studentId: studentId);
+    if (response.statusCode != 200) {
+      throw StateError('دریافت بازخورد ممکن نشد.');
+    }
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return (body['feedback'] as List<dynamic>).cast<Map<String, dynamic>>();
+  }
+
   Future<int?> cachedStudentId() async {
     final id = await _storage.read(key: _key('cached_student_id'));
     return id == null ? null : int.tryParse(id);

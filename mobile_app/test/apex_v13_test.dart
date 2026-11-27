@@ -34,7 +34,7 @@ void main() {
     legacyData = {
       'studentName': 'دانش‌آموز آزمایشی',
       'studentGrade': 'هشتم',
-      'studentTrack': '',
+      'studentTrack': 'تجربی',
       'tasks': [
         {
           'title': 'ریاضی',
@@ -49,25 +49,41 @@ void main() {
         {
           'subject': 'علوم',
           'date': today,
-          'minutes': 25,
-          'tests': 3,
+          'minutes': 45,
+          'tests': 21,
           'satisfaction': 7,
           'mood': 3,
           'stress': 3,
           'note': 'نمونه',
         },
+        for (final (subject, minutes, tests) in [
+          ('ریاضی', 60, 35),
+          ('زیست', 75, 40),
+          ('شیمی', 90, 60),
+        ])
+          {
+            'subject': subject,
+            'date': today,
+            'minutes': minutes,
+            'tests': tests,
+            'satisfaction': 7,
+            'mood': 3,
+            'stress': 3,
+            'note': '',
+          },
       ],
     };
     fixture = jsonEncode(legacyData);
     SharedPreferences.setMockInitialValues({legacyKey: fixture});
   });
 
-  testWidgets('v12 data loads and switching theme leaves its bytes intact', (
+  testWidgets('v15-shaped data loads and switching theme leaves its bytes intact', (
     tester,
   ) async {
     await openApp(tester);
     expect(find.text('سلام، دانش‌آموز آزمایشی'), findsOneWidget);
-    expect(find.text('25 دقیقه مطالعه'), findsOneWidget);
+    expect(find.text('270 دقیقه مطالعه'), findsOneWidget);
+    expect(find.text('156 تست'), findsOneWidget);
     expect(
       Theme.of(tester.element(find.byType(ApexDashboard))).brightness,
       Brightness.light,
@@ -90,7 +106,7 @@ void main() {
     expect(prefs.getString(legacyKey), fixture);
   });
 
-  testWidgets('dashboard task updates preserve v12 reports and profile', (
+  testWidgets('dashboard task updates preserve v15-shaped reports and profile', (
     tester,
   ) async {
     await openApp(tester);
@@ -103,6 +119,7 @@ void main() {
     expect(stored['reports'], legacyData['reports']);
     expect(stored['studentName'], legacyData['studentName']);
     expect(stored['studentGrade'], legacyData['studentGrade']);
+    expect(stored['studentTrack'], legacyData['studentTrack']);
     final originalTask = (legacyData['tasks'] as List).single as Map;
     expect((stored['tasks'] as List).single, {...originalTask, 'done': true});
     await tester.drag(find.byType(ListView), const Offset(0, 650));
@@ -120,8 +137,8 @@ void main() {
     final charts =
         tester.widgetList<ApexWeekChart>(find.byType(ApexWeekChart)).toList();
     expect(charts, hasLength(2));
-    expect(charts[0].days.map((day) => day.value), [0, 0, 0, 0, 0, 0, 25]);
-    expect(charts[1].days.map((day) => day.value), [0, 0, 0, 0, 0, 0, 3]);
+    expect(charts[0].days.map((day) => day.value), [0, 0, 0, 0, 0, 0, 270]);
+    expect(charts[1].days.map((day) => day.value), [0, 0, 0, 0, 0, 0, 156]);
   });
 
   testWidgets(
@@ -145,8 +162,8 @@ void main() {
       expect((stored['tasks'] as List).single['done'], true);
       expect((stored['reports'] as List).first['linkedTitle'], 'ریاضی');
       expect(
-        (stored['reports'] as List).last,
-        (legacyData['reports'] as List).single,
+        (stored['reports'] as List).skip(1),
+        legacyData['reports'],
       );
     },
   );

@@ -28,36 +28,35 @@ class _TaranomAppState extends State<TaranomApp> {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       locale: const Locale('fa'),
-      builder: (context, navigator) => Column(
-        children: [
-          Expanded(child: navigator!),
-          FutureBuilder<PackageInfo>(
-            future: _package,
-            builder: (context, snapshot) {
-              final info = snapshot.data;
-              if (info == null || info.version.isEmpty || info.buildNumber.isEmpty) {
-                return const SizedBox.shrink();
-              }
-              final theme = Theme.of(context);
-              return Material(
+      builder: (context, navigator) => FutureBuilder<PackageInfo>(
+        future: _package,
+        builder: (context, snapshot) {
+          final info = snapshot.data;
+          final showVersion = info != null && info.version.isNotEmpty && info.buildNumber.isNotEmpty;
+          final theme = Theme.of(context);
+          return Column(
+            children: [
+              Expanded(child: MediaQuery.removePadding(
+                context: context,
+                removeBottom: showVersion,
+                child: navigator!,
+              )),
+              if (showVersion) Material(
                 color: theme.colorScheme.surface,
                 child: SafeArea(
                   top: false,
                   child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 3),
-                      child: Text(
-                        'Apex360 · ${info.version}+${info.buildNumber}',
-                        textDirection: TextDirection.ltr,
-                        style: theme.textTheme.labelSmall,
-                      ),
+                    child: Text(
+                      'Apex360 · ${info.version}+${info.buildNumber}',
+                      textDirection: TextDirection.ltr,
+                      style: theme.textTheme.labelSmall,
                     ),
                   ),
                 ),
-              );
-            },
-          ),
-        ],
+              ),
+            ],
+          );
+        },
       ),
       home: const bool.fromEnvironment('APEX_DEMO_MODE', defaultValue: false)
           ? const ApexDemoScreen()

@@ -125,7 +125,12 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   }
   Future<void> addReport() async {
     final name = canonicalSubject(subjectController.text);
-    if (name.isEmpty) return;
+    if (name.isEmpty || minutes < 0 || minutes > 600 || tests < 0 || tests > 100) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('نام درس، مدت ۰ تا ۶۰۰ دقیقه و تعداد ۰ تا ۱۰۰ تست را وارد کنید.'),
+      ));
+      return;
+    }
     final linked = linkedTaskIndex == null ? null : tasks[linkedTaskIndex!];
     setState(() {
       if (linked != null && completeLinkedTask) linked['done'] = true;
@@ -351,18 +356,26 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     subjectSuggestions(subjectController),
     TextField(controller: subjectController, maxLength: 80,
       decoration: const InputDecoration(labelText: 'نام درس')),
-    Text('مدت مطالعه: ' + minutes.toString() + ' دقیقه'),
-    Row(children: [const Text('ورود دقیق (دقیقه): '),
-      Expanded(child: TextFormField(key: ValueKey('minutes-$reportFormVersion'), initialValue: minutes.toString(),
+    Row(children: [
+      Expanded(child: TextFormField(
+        key: ValueKey('minutes-$reportFormVersion'), initialValue: minutes.toString(),
         keyboardType: TextInputType.number,
-        decoration: const InputDecoration(hintText: 'دقیقه'),
-        onChanged: (v) { final n = int.tryParse(v); if (n != null && n >= 0 && n <= 600) setState(() => minutes = n); },
-      ))]),
-    Slider(value: minutes.clamp(0, 180).toDouble(), min: 0, max: 180, divisions: 12,
-      onChanged: (value) => setState(() { minutes = value.round(); reportFormVersion++; })),
-    TextFormField(key: ValueKey('tests-$reportFormVersion'), initialValue: tests.toString(), keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'تعداد تست (۰ تا ۱۰۰)'), onChanged: (v) { final n = int.tryParse(v); if (n != null && n >= 0 && n <= 100) setState(() => tests = n); }),
-    Slider(value: tests.toDouble(), min: 0, max: 100, divisions: 100,
-      onChanged: (value) => setState(() { tests = value.round(); reportFormVersion++; })),
+        decoration: const InputDecoration(labelText: 'دقیقه مطالعه'),
+        onChanged: (value) => minutes = int.tryParse(value) ?? -1,
+      )),
+      const SizedBox(width: 10),
+      Expanded(child: TextFormField(
+        key: ValueKey('tests-$reportFormVersion'), initialValue: tests.toString(),
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(labelText: 'تعداد تست'),
+        onChanged: (value) => tests = int.tryParse(value) ?? -1,
+      )),
+    ]),
+    ExpansionTile(
+      title: const Text('جزئیات گزارش (اختیاری)'),
+      initiallyExpanded: editingReportIndex != null,
+      key: ValueKey('details-$reportFormVersion'),
+      children: [
     Text('رضایت از عملکرد: ' + satisfaction.toString() + ' از ۱۰'),
     Slider(value: satisfaction.toDouble(), min: 0, max: 10, divisions: 10,
       onChanged: (value) => setState(() => satisfaction = value.round())),
@@ -374,6 +387,8 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       onChanged: (value) => setState(() => stress = value.round())),
     TextField(controller: noteController, maxLines: 3, maxLength: 400,
       decoration: const InputDecoration(labelText: 'کارهای انجام‌نشده و علت آن / توضیحات')),
+      ],
+    ),
     FilledButton(onPressed: addReport, child: Text(editingReportIndex == null ? 'ذخیره گزارش روی گوشی' : 'ذخیره اصلاحات گزارش')),
     if (editingReportIndex != null) TextButton(onPressed: () => setState(resetReport), child: const Text('انصراف از ویرایش گزارش')),
     const SizedBox(height: 16),
@@ -655,7 +670,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         ],
       ),
       body: loadFailed ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [const Text('خواندن اطلاعات ناموفق بود. برای حفاظت از داده‌ها ثبت جدید متوقف شده است.'), OutlinedButton(onPressed: () { setState(() => loadFailed = false); load(); }, child: const Text('تلاش مجدد'))]))) : !ready ? const Center(child: CircularProgressIndicator()) :
-        SafeArea(child: ListView(key: ValueKey(tab), padding: const EdgeInsets.all(14), children: [
+        SafeArea(bottom: false, child: ListView(key: ValueKey(tab), padding: const EdgeInsets.fromLTRB(14, 8, 14, 10), children: [
           if (!profileComplete || tab == 4) Container(padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(color: theme.colorScheme.secondaryContainer, borderRadius: BorderRadius.circular(14)),
             child: Text('برنامه و گزارش‌های شخصی روی همین گوشی ذخیره می‌شوند. برای ارسال گزارش به سامانه، از بخش گزارش‌ها در حساب دانش‌آموز استفاده کن.',
@@ -668,7 +683,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
           if (profileComplete && tab == 3) report(),
           if (profileComplete && tab == 4) account(),
         ])),
-      bottomNavigationBar: !ready || !profileComplete ? null : NavigationBar(selectedIndex: tab,
+      bottomNavigationBar: !ready || !profileComplete ? null : NavigationBar(height: 62, selectedIndex: tab,
         onDestinationSelected: (v) => setState(() => tab = v),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home_outlined), label: 'خانه'),

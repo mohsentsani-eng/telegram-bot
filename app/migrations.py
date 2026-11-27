@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from . import db
 
-TARGET_VERSION = 7
+TARGET_VERSION = 8
 
 def _backup_path():
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -433,6 +433,21 @@ def migrate():
             ON mobile_study_activities(student_id,client_created_at);
         """)
         c.execute("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(7,CURRENT_TIMESTAMP)")
+
+    if current < 8:
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS mobile_plan_receipts (
+            plan_id INTEGER PRIMARY KEY REFERENCES plans(id),
+            received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS mobile_report_feedback (
+            activity_id INTEGER NOT NULL REFERENCES mobile_study_activities(id),
+            assignment_id INTEGER NOT NULL REFERENCES student_counselor_assignments(id),
+            message TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(activity_id, assignment_id)
+        );
+        """)
 
     c.execute("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(?,CURRENT_TIMESTAMP)", (TARGET_VERSION,))
     c.commit()

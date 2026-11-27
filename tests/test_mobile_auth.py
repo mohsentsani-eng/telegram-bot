@@ -201,7 +201,7 @@ def test_local_api_login_plan_and_report_retry(tmp_path, monkeypatch):
     finally:
         c.close()
     db.save_plan(other, "Other student's plan", {"schedule": []})
-    client = TestClient(create_app("test-only"))
+    client = TestClient(create_app("test-only"), base_url="http://127.0.0.1")
     route = "/api/v1/mobile/student/counselor"
     assert client.get(route).status_code == 401
     db.save_plan(STUDENT_ID, "برنامه شخصی", {"schedule": []})
@@ -250,3 +250,80 @@ def test_local_api_login_plan_and_report_retry(tmp_path, monkeypatch):
         assert c.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 4
     finally:
         c.close()
+
+
+def test_v16_demo_registration_receipt_and_feedback(tmp_path, monkeypatch):
+    import re
+
+    from fastapi.testclient import TestClient
+
+    from app import migrations
+    from tools.mobile_test_api import COUNSELOR_USERNAME, create_app, seed
+
+    monkeypatch.setattr(db, "DB", tmp_path / "demo.sqlite3")
+    counselor = seed("fake-counselor-password", preconfigured=False)
+    student = -1600
+    client = TestClient(create_app("student-code", telegram_id=student,
+                                   operator_code="operator-code", counselor_id=counselor),
+                        base_url="http://127.0.0.1")
+    login_path = "/api/v1/mobile/auth/local"
+    login_data = {"code": "student-code"}
+    assert client.post(login_path, json=login_data).status_code == 409
+    assert "ثبت دانش‌آموز ساختگی" in client.get("/demo").text
+    registration = {"action": "register", "first_name": "آرین", "last_name": "نمونه"}
+    assert client.post("/demo", data={**registration, "code": "student-code"}).status_code == 403
+    for _ in range(2):
+        assert client.post("/demo", data={**registration, "code": "operator-code"},
+                           follow_redirects=False).status_code == 303
+    token = client.post(login_path, json=login_data).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    context = "/api/v1/mobile/student/counselor"
+    assert client.get(context, headers=headers).json() == {"assignment": None, "plan": None}
+    for _ in range(2):
+        assert client.post("/demo", data={"code": "operator-code", "action": "assign"},
+                           follow_redirects=False).status_code == 303
+    assert client.get(context, headers=headers).json()["assignment"]["name"] == "مشاور آزمایشی ترنم"
+
+    portal = f"/counselor/student/{student}"
+    feedback_path = "/api/v1/mobile/student/study-activities/feedback"
+    assert client.get(feedback_path).status_code == 401
+    assert client.post("/counselor/login", data={
+        "username": COUNSELOR_USERNAME, "password": "fake-counselor-password",
+    }, follow_redirects=False).status_code == 303
+    csrf = re.search(r'name="csrf" value="([^"]+)"', client.get(portal).text)[1]
+    assert client.post(f"{portal}/plan", data={
+        "csrf": csrf, "title": "مرور", "schedule": "شنبه | 16:00 | 16:45 | زیست",
+    }, follow_redirects=False).status_code == 303
+    plan = client.get(context, headers=headers).json()["plan"]
+    assert plan["received_at"] is None
+    receipt_path = f"{context}/plans/{plan['id']}/receipt"
+    assert client.post(receipt_path).status_code == 401
+    assert client.post(f"{context}/plans/999/receipt", headers=headers).status_code == 404
+    receipt = client.post(receipt_path, headers=headers).json()
+    assert receipt["received_at"]
+    assert client.post(receipt_path, headers=headers).json() == receipt
+    assert "دریافت توسط دانش‌آموز تأیید شده" in client.get(portal).text
+
+    event = {
+        "event_id": "demo-v16-report-001", "subject": "زیست", "activity_type": "study",
+        "duration_minutes": 45, "test_count": 12, "created_at": "2026-11-27T12:00:00Z",
+    }
+    submit = "/api/v1/mobile/student/study-activities/sync"
+    assert client.post(submit, json={"activities": [event, event]}, headers=headers).json() == {
+        "accepted_event_ids": [event["event_id"]],
+    }
+    message = {"event_id": event["event_id"], "message": "یک مرور کوتاه کافی است.", "csrf": csrf}
+    assert client.post(f"{portal}/feedback", data={**message, "csrf": "invalid"}).status_code == 403
+    assert client.post(f"/counselor/student/{student - 1}/feedback", data=message).status_code == 404
+    assert client.post(f"{portal}/feedback", data=message, follow_redirects=False).status_code == 303
+    feedback = client.get(feedback_path, headers=headers).json()["feedback"]
+    assert [(row["event_id"], row["message"]) for row in feedback] == [
+        (event["event_id"], message["message"]),
+    ]
+
+    db.assign_counselor(student, db.add_counselor("مشاور دوم"))
+    assert client.post(f"{portal}/feedback", data=message).status_code == 404
+    assert client.post(receipt_path, headers=headers).status_code == 404
+    assert client.get("/api/v1/mobile/student/study-plan", headers=headers).json() == {"plan": None}
+    assert client.get(feedback_path, headers=headers).json() == {"feedback": []}
+    assert not migrations.migrate()
