@@ -41,6 +41,9 @@ jobs:
       - name: Analyze Dart code
         working-directory: mobile_app
         run: flutter analyze --no-fatal-infos
+      - name: Test the offline app
+        working-directory: mobile_app
+        run: flutter test
       - name: Configure stable debug signing
         env:
           APEX_KEYSTORE: ${{ secrets.APEX360_DEBUG_KEYSTORE_BASE64 }}
@@ -55,17 +58,30 @@ jobs:
           keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file "$RUNNER_TEMP/apex360-signer.der"
       - name: Build installable test APK
         working-directory: mobile_app
-        run: flutter build apk --debug --build-name=0.12.0 --build-number="${{ github.run_number }}" --dart-define=APEX_DEMO_MODE=true
+        run: flutter build apk --debug --build-name=0.13.0 --build-number="${{ github.run_number }}" --dart-define=APEX_DEMO_MODE=true
+      - name: Verify APK identity and version
+        working-directory: mobile_app
+        env:
+          APEX_BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          AAPT="$(find "${ANDROID_HOME}/build-tools" -name aapt -type f | sort -V | tail -1)"
+          metadata="$("$AAPT" dump badging build/app/outputs/flutter-apk/app-debug.apk)"
+          grep -F "package: name='ir.taranomhamdeli.taranom_hamdeli' versionCode='$APEX_BUILD_NUMBER' versionName='0.13.0'" <<< "$metadata"
+          # The most recent published 0.12.0 APK has versionCode 40.
+          test "$APEX_BUILD_NUMBER" -gt 40
       - name: Verify APK signature
         working-directory: mobile_app
+        env:
+          # Public certificate digest from the 0.12.0 APK (Actions run 45805205510).
+          APEX_V12_CERT_SHA256: 9ac7005abeb102c31933cca8a56e05e66e486b8bf1c1ba38ae43f733a2d44527
         run: |
           APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort -V | tail -1)"
           signature="$("$APKSIGNER" verify --verbose --print-certs build/app/outputs/flutter-apk/app-debug.apk)"
           printf '%s\n' "$signature"
           expected="$(sha256sum "$RUNNER_TEMP/apex360-signer.der" | cut -d ' ' -f 1)"
           actual="$(printf '%s\n' "$signature" | sed -nE 's/^.*Signer.*certificate SHA-256 digest: ([[:xdigit:]]{64})$/\1/p' | tr '[:upper:]' '[:lower:]' | sort -u)"
-          if ! printf '%s\n' "$signature" | grep -Fxq 'Number of signers: 1' || [ "$actual" != "$expected" ]; then
-            echo "::error::APK signer does not match the configured Apex360 certificate."
+          if ! printf '%s\n' "$signature" | grep -Fxq 'Number of signers: 1' || [ "$actual" != "$expected" ] || [ "$actual" != "$APEX_V12_CERT_SHA256" ]; then
+            echo "::error::APK signer does not match the configured Apex360 certificate and the published v12 APK."
             exit 1
           fi
       - name: Remove signing material

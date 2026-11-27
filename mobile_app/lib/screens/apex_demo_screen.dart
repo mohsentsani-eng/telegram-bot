@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:math';
 import 'package:cryptography/cryptography.dart';
 import 'package:file_picker/file_picker.dart';
@@ -7,6 +6,9 @@ import 'package:shamsi_date/shamsi_date.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../theme/apex_offline_theme.dart';
+import 'apex_dashboard.dart';
 
 /// Offline-only workspace; does not contact the production bot or API.
 class ApexDemoScreen extends StatefulWidget {
@@ -16,6 +18,21 @@ class ApexDemoScreen extends StatefulWidget {
 }
 class _ApexDemoScreenState extends State<ApexDemoScreen> {
   static const storageKey = 'apex360_offline_v1';
+  static const themeKey = 'apex360_dark_mode';
+  bool? darkMode;
+
+  Future<void> toggleTheme(bool dark) async {
+    setState(() => darkMode = dark);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (await prefs.setBool(themeKey, dark)) return;
+    } catch (_) {
+      // The current appearance can still be used for this session.
+    }
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('ذخیره تنظیم نمایش ممکن نشد.')));
+  }
+
   final taskController = TextEditingController();
   final subjectController = TextEditingController();
   final topicController = TextEditingController();
@@ -51,6 +68,8 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   Future<void> load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final preference = prefs.get(themeKey);
+      if (preference is bool) darkMode ??= preference;
       final raw = prefs.getString(storageKey);
       if (raw != null) {
         final data = jsonDecode(raw) as Map<String, dynamic>;
@@ -128,59 +147,43 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     padding: const EdgeInsets.only(bottom: 12),
     child: Text(label, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)));
 
-  Widget home() {
-    final current = tasks.where((t) => t['date'] == today).toList();
-    final done = current.where((t) => t['done'] == true).length;
-    final currentReports = reports.where((r) => r['date'] == today).toList();
-    final total = currentReports.fold<int>(0, (sum, r) => sum + (r['minutes'] as int));
-    final count = currentReports.fold<int>(0, (sum, r) => sum + (r['tests'] as int));
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Container(
-        padding: const EdgeInsets.all(18),
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [Color(0xFF43358B), Color(0xFF087E87)]),
-          borderRadius: BorderRadius.circular(22)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Expanded(child: Text('مسیر پیشرفت من', style: TextStyle(color: Colors.white70, fontSize: 14))),
-            Container(padding: const EdgeInsets.all(12), decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle), child: const Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 32)),
-          ]),
-          const SizedBox(height: 8),
-          Text(studentName.isEmpty ? 'به Apex360 خوش آمدی' : 'سلام، $studentName', style: const TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text(persianDate(today), style: const TextStyle(color: Colors.white)),
-          const SizedBox(height: 12),
-          LinearProgressIndicator(value: current.isEmpty ? 0 : done / current.length, color: Colors.white, backgroundColor: Colors.white24),
-          const SizedBox(height: 8),
-          Text(current.isEmpty ? 'هنوز برنامه امروز ثبت نشده است' : 'امروز $done از ${current.length} تکلیف انجام شده', style: const TextStyle(color: Colors.white)),
-        ])),
-      if (studentName.isEmpty || studentGrade.isEmpty)
-        Card(child: ListTile(leading: const Icon(Icons.person_add_alt_1), title: const Text('تکمیل پروفایل دانش‌آموز'), subtitle: const Text('نام و پایه تحصیلی خود را ثبت کن.'), onTap: () => setState(() => tab = 4))),
-      Card(child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
-        const Icon(Icons.auto_awesome_rounded, color: Color(0xFF7861C5), size: 30),
-        const SizedBox(width: 12),
-        Expanded(child: Text(current.isEmpty ? 'با یک هدف کوچک شروع کن؛ حتی یک قدم ارزشمند است.' : done == current.length ? 'آفرین! حالا برای استراحت و مرور وقت بگذار.' : 'روی یک تکلیف تمرکز کن؛ لازم نیست همه چیز را یک‌باره انجام بدهی.')),
-      ]))),
-      heading('خلاصه عملکرد امروز'),
-      Card(child: ListTile(title: const Text('اجرای برنامه امروز'),
-        subtitle: LinearProgressIndicator(value: current.isEmpty ? 0 : done / current.length),
-        trailing: Text(done.toString() + ' از ' + current.length.toString()))),
-      Card(child: ListTile(title: const Text('مطالعه امروز'), trailing: Text(total.toString() + ' دقیقه'))),
-      Card(child: ListTile(title: const Text('تست‌های امروز'), trailing: Text(count.toString() + ' تست'))),
-      FilledButton.icon(onPressed: () => setState(() { selectedDate = DateTime.now(); filterDay = today; tab = 1; }), icon: const Icon(Icons.calendar_today), label: const Text('برنامه‌ریزی امروز')),
-      OutlinedButton.icon(onPressed: () => setState(() => tab = 3), icon: const Icon(Icons.edit_note), label: const Text('ثبت گزارش مطالعه')),
-      heading('مأموریت‌های امروز'),
-      if (current.isEmpty) const Text('هنوز تکلیفی برای امروز ثبت نشده است.'),
-      ...current.map((t) => Card(child: CheckboxListTile(title: Text(t['title'].toString()), subtitle: Text('${t["plannedMinutes"] ?? 0} دقیقه'), value: t['done'] == true, onChanged: (v) async { setState(() => t['done'] = v ?? false); await save(); }))),
-    ]);
-  }
+  void openTodayPlan() => setState(() {
+    if (editingTaskIndex == null) selectedDate = DateTime.now();
+    filterDay = today;
+    tab = 1;
+  });
+
+  void reportTask(int index) => setState(() {
+    if (editingReportIndex == null) {
+      linkedTaskIndex = index;
+      completeLinkedTask = false;
+      if (subjectController.text.trim().isEmpty) {
+        subjectController.text = tasks[index]['title'].toString();
+      }
+      reportFormVersion++;
+    }
+    tab = 3;
+  });
+
+  Widget home() => ApexDashboard(
+    studentName: studentName,
+    dateLabel: persianDate(today),
+    tasks: tasks.where((task) => task['date'] == today).toList(),
+    reports: reports.where((report) => report['date'] == today).toList(),
+    onPlan: openTodayPlan,
+    onReport: () => setState(() => tab = 3),
+    onToggleTask: (task, value) async {
+      setState(() => task['done'] = value);
+      await save();
+    },
+  );
+
   Future<DateTime?> pickJalaliDate() async {
     final initial = Jalali.fromDateTime(selectedDate);
     int year = initial.year, month = initial.month, day = initial.day;
     const months = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
     const weekdays = ['ش','ی','د','س','چ','پ','ج'];
-    return showDialog<DateTime>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) {
+    return showOfflineDialog<DateTime>(builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) {
       final first = Jalali(year, month, 1);
       final count = first.monthLength;
       final offset = (first.toDateTime().weekday + 1) % 7;
@@ -238,6 +241,14 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   Widget subjectSuggestions(TextEditingController controller) => ExpansionTile(tilePadding: EdgeInsets.zero, title: const Text('انتخاب سریع درس'), children: [Wrap(spacing: 6, runSpacing: 4, children: subjectChoices.map((name) => ActionChip(label: Text(name), onPressed: () => setState(() => controller.text = name))).toList())]);
   Widget plan() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     heading('برنامه مطالعاتی روزانه'),
+    Card(child: ListTile(
+      leading: const Icon(Icons.flag_outlined),
+      title: Text('تکالیف امروز: ${tasks.where((t) => t['date'] == today && t['done'] == true).length} از ${tasks.where((t) => t['date'] == today).length} انجام شده'),
+      trailing: TextButton(
+        onPressed: filterDay == today ? null : openTodayPlan,
+        child: const Text('نمای امروز'),
+      ),
+    )),
     subjectSuggestions(taskController),
     TextField(controller: taskController, maxLength: 100,
       decoration: const InputDecoration(labelText: 'درس یا تکلیف', hintText: 'مثلاً مرور زیست')),
@@ -291,7 +302,12 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         setState(() => tasks[entry.key]['done'] = value ?? false);
         await save();
       }),
-      Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+      Wrap(alignment: WrapAlignment.end, children: [
+        TextButton.icon(
+          icon: const Icon(Icons.edit_note),
+          label: const Text('ثبت مطالعه'),
+          onPressed: () => reportTask(entry.key),
+        ),
         TextButton.icon(icon: const Icon(Icons.edit_outlined), label: const Text('ویرایش'), onPressed: () => setState(() {
           editingTaskIndex = entry.key;
           taskController.text = entry.value['title'].toString();
@@ -302,7 +318,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
           planFormVersion++;
         })),
         TextButton.icon(icon: const Icon(Icons.delete_outline), label: const Text('حذف'), onPressed: () async {
-          final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+          final confirmed = await showOfflineDialog<bool>(builder: (ctx) => AlertDialog(
             title: const Text('حذف تکلیف؟'), content: const Text('گزارش‌های مطالعه حذف نمی‌شوند.'), actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')),
               TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
@@ -366,7 +382,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       title: Text(r['subject'].toString() + ' • ' + r['minutes'].toString() + ' دقیقه • ' + r['tests'].toString() + ' تست'),
       subtitle: Text(persianDate(r['date'].toString()) + ' | رضایت ' + r['satisfaction'].toString() + '/۱۰ | خلق ' + r['mood'].toString() + '/۵ | استرس ' + r['stress'].toString() + '/۵'),
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [IconButton(icon: const Icon(Icons.delete_outline), tooltip: 'حذف گزارش', onPressed: () async {
-        final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('حذف گزارش؟'), content: const Text('این گزارش حذف می‌شود؛ وضعیت تکلیف تغییر نمی‌کند.'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')), TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
+        final ok = await showOfflineDialog<bool>(builder: (ctx) => AlertDialog(title: const Text('حذف گزارش؟'), content: const Text('این گزارش حذف می‌شود؛ وضعیت تکلیف تغییر نمی‌کند.'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')), TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
         if (ok != true || !mounted) return;
         setState(() { reports.removeAt(entry.key); resetReport(); }); await save();
       }), IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'ویرایش گزارش', onPressed: () => setState(() {
@@ -378,19 +394,23 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   Widget progress() {
     final now = DateTime.now();
     final days = List.generate(7, (i) {
-      final date = now.subtract(Duration(days: 6 - i)).toIso8601String().substring(0, 10);
+      final date = DateTime(now.year, now.month, now.day - 6 + i).toIso8601String().substring(0, 10);
       final sum = reports.where((r) => r['date'] == date).fold<int>(0, (n, r) => n + (r['minutes'] as int));
       return (date: date, sum: sum);
     });
     final total = days.fold<int>(0, (n, d) => n + d.sum);
-    final maximum = days.fold<int>(60, (n, d) => d.sum > n ? d.sum : n);
     final recentDates = days.map((d) => d.date).toSet();
     final recentTasks = tasks.where((t) => recentDates.contains(t['date'])).toList();
     final completed = recentTasks.where((t) => t['done'] == true).length;
     final planned = recentTasks.fold<int>(0, (n, t) => n + ((t['plannedMinutes'] as num?)?.toInt() ?? 0));
+    final testsByDate = <String, int>{};
     final bySubject = <String, int>{};
     final testsBySubject = <String, int>{};
     for (final r in reports.where((r) => recentDates.contains(r['date']))) {
+      final date = r['date'].toString();
+      final testCount = (r['tests'] as num).toInt();
+      testsByDate.update(date, (count) => count + testCount,
+        ifAbsent: () => testCount);
       final name = canonicalSubject(r['subject'].toString());
       bySubject.update(name, (v) => v + (r['minutes'] as int), ifAbsent: () => r['minutes'] as int);
       testsBySubject.update(name, (v) => v + (r['tests'] as int), ifAbsent: () => r['tests'] as int);
@@ -398,6 +418,16 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     final percent = recentTasks.isEmpty ? 0 : (100 * completed / recentTasks.length).round();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       heading('پیشرفت هفت روز گذشته'),
+      ApexWeekChart(
+        title: 'زمان مطالعه',
+        unit: 'دقیقه',
+        days: [for (final day in days) (label: persianDate(day.date).substring(5), value: day.sum)],
+      ),
+      ApexWeekChart(
+        title: 'تعداد تست',
+        unit: 'تست',
+        days: [for (final day in days) (label: persianDate(day.date).substring(5), value: testsByDate[day.date] ?? 0)],
+      ),
       Card(child: ListTile(title: const Text('مجموع مطالعه هفتگی'),
         trailing: Text((total / 60).toStringAsFixed(1) + ' ساعت'))),
       Card(child: ListTile(title: const Text('پایبندی به برنامه هفتگی'),
@@ -427,13 +457,6 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       heading('پیشنهاد مطالعاتی'),
     Card(child: Padding(padding: const EdgeInsets.all(16), child: Text(total == 0 ? 'برای شروع، یک فعالیت کوتاه و قابل انجام برنامه‌ریزی کنید.' : recentTasks.isEmpty ? 'برای مطالعه بعدی، تکلیف مشخصی در برنامه ثبت کنید تا بتوانید میزان پایبندی را بسنجید.' : completed < recentTasks.length ? 'تکالیف باقی‌مانده را بررسی کنید و برای هرکدام زمان واقع‌بینانه تعیین کنید.' : 'تکالیف ثبت‌شده انجام شده‌اند؛ مرور و تمرین بازیابی را در برنامه بعدی بگنجانید.'))),
     const Text('پیشنهاد خودکار بر اساس گزارش محلی؛ جایگزین نظر مشاور نیست.'),
-    heading('روند مطالعه روزانه'),
-      ...days.map((d) => Padding(padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(children: [
-          SizedBox(width: 60, child: Text(persianDate(d.date).substring(5))),
-          Expanded(child: LinearProgressIndicator(value: d.sum / maximum, minHeight: 12)),
-          SizedBox(width: 75, child: Text(d.sum.toString() + ' دقیقه')),
-        ]))),
     ]);
   }
   Future<void> recoverPreviousBackup() async {
@@ -453,7 +476,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
   }
   Future<String?> backupPassword(bool creating) async {
     String password = '', confirmation = '';
-    return showDialog<String>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) => AlertDialog(
+    return showOfflineDialog<String>(builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) => AlertDialog(
       title: Text(creating ? 'رمز نسخه پشتیبان' : 'رمز بازیابی'),
       content: Column(mainAxisSize: MainAxisSize.min, children: [TextField(obscureText: true, autocorrect: false, enableSuggestions: false,
         decoration: const InputDecoration(labelText: 'رمز (حداقل ۱۲ نویسه)'),
@@ -502,7 +525,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     }
   }
   Future<void> exportBackup() async {
-    final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+    final confirmed = await showOfflineDialog<bool>(builder: (ctx) => AlertDialog(
       title: const Text('پشتیبان‌گیری از اطلاعات شخصی'),
       content: const Text('این نسخه شامل نام، برنامه و گزارش‌های شخصی است و رمزگذاری نشده است. فقط در محل خصوصی ذخیره کنید و برای دیگران نفرستید.'),
       actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')),
@@ -538,7 +561,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         }
         if ((r['minutes'] as int) < 0 || (r['minutes'] as int) > 600 || (r['tests'] as int) < 0 || (r['tests'] as int) > 100 || (r['satisfaction'] as int) < 0 || (r['satisfaction'] as int) > 10 || (r['mood'] as int) < 1 || (r['mood'] as int) > 5 || (r['stress'] as int) < 1 || (r['stress'] as int) > 5) throw const FormatException();
       }
-      final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('بازیابی اطلاعات؟'), content: Text('این نسخه شامل ${newTasks.length} تکلیف و ${newReports.length} گزارش است. اطلاعات فعلی جایگزین می‌شوند. ابتدا از اطلاعات فعلی پشتیبان بگیرید.'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')), TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('بازیابی'))]));
+      final confirmed = await showOfflineDialog<bool>(builder: (ctx) => AlertDialog(title: const Text('بازیابی اطلاعات؟'), content: Text('این نسخه شامل ${newTasks.length} تکلیف و ${newReports.length} گزارش است. اطلاعات فعلی جایگزین می‌شوند. ابتدا از اطلاعات فعلی پشتیبان بگیرید.'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')), TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('بازیابی'))]));
       if (confirmed != true || !mounted) return;
       final prefs = await SharedPreferences.getInstance();
       final previousRaw = prefs.getString(storageKey);
@@ -577,7 +600,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     TextButton.icon(onPressed: recoverPreviousBackup, icon: const Icon(Icons.undo), label: const Text('بازگردانی اطلاعات قبل از آخرین بازیابی')),
     const Text('پشتیبان متنی رمزگذاری نشده است؛ آن را فقط در محل خصوصی نگه دارید.'),
 
-    const Text('نسخه آزمایشی ۱۲ • اصلاح گزارش و تحلیل درس'),
+    const Text('نسخه آزمایشی ۱۳'),
     const Card(child: ListTile(title: Text('پروفایل دانش‌آموز'),
       subtitle: Text('مشخصات محلی؛ بدون اتصال به پرونده آنلاین'))),
     TextField(controller: nameController, maxLength: 80, decoration: const InputDecoration(labelText: 'نام و نام خانوادگی')),
@@ -594,16 +617,50 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     Card(child: ListTile(title: const Text('تکالیف ذخیره‌شده'), trailing: Text(tasks.length.toString()))),
     Card(child: ListTile(title: const Text('گزارش‌های ذخیره‌شده'), trailing: Text(reports.length.toString()))),
   ]);
+  bool get isDark => darkMode ??
+      (MediaQuery.platformBrightnessOf(context) == Brightness.dark);
+
+  ThemeData get offlineTheme =>
+      apexOfflineTheme(isDark ? Brightness.dark : Brightness.light);
+
+  Future<T?> showOfflineDialog<T>({required WidgetBuilder builder}) {
+    final theme = offlineTheme;
+    return showDialog<T>(
+      context: context,
+      builder: (dialogContext) => Theme(
+        data: theme,
+        child: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Builder(builder: builder),
+        ),
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) => Directionality(textDirection: TextDirection.rtl,
+  Widget build(BuildContext context) {
+    final dark = isDark;
+    final theme = offlineTheme;
+    return Theme(
+      data: theme,
+      child: Directionality(textDirection: TextDirection.rtl,
     child: Scaffold(
-      appBar: AppBar(title: const Text('Apex360 | ترنم همدلی')),
+      appBar: AppBar(
+        title: const Text('Apex360 | ترنم همدلی'),
+        actions: [
+          IconButton(
+            tooltip: dark ? 'حالت روز' : 'حالت شب',
+            onPressed: ready ? () => toggleTheme(!dark) : null,
+            icon: Icon(dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+          ),
+        ],
+      ),
       body: loadFailed ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [const Text('خواندن اطلاعات ناموفق بود. برای حفاظت از داده‌ها ثبت جدید متوقف شده است.'), OutlinedButton(onPressed: () { setState(() => loadFailed = false); load(); }, child: const Text('تلاش مجدد'))]))) : !ready ? const Center(child: CircularProgressIndicator()) :
         SafeArea(child: ListView(key: ValueKey(tab), padding: const EdgeInsets.all(14), children: [
           if (!profileComplete || tab == 4) Container(padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: const Color(0xFFE8F0FF), borderRadius: BorderRadius.circular(14)),
-            child: const Text('نسخه آفلاین آزمایشی • داده‌ها فقط روی گوشی ذخیره می‌شوند و به ربات یا مشاور ارسال نمی‌شوند. حذف برنامه ممکن است اطلاعات را پاک کند.',
-              style: TextStyle(fontSize: 12, height: 1.8))),
+            decoration: BoxDecoration(color: theme.colorScheme.secondaryContainer, borderRadius: BorderRadius.circular(14)),
+            child: Text('نسخه آفلاین آزمایشی • داده‌ها فقط روی گوشی ذخیره می‌شوند و به ربات یا مشاور ارسال نمی‌شوند. حذف برنامه ممکن است اطلاعات را پاک کند.',
+              style: TextStyle(color: theme.colorScheme.onSecondaryContainer, fontSize: 12, height: 1.8))),
           const SizedBox(height: 12),
           if (!profileComplete) ...[heading('ابتدا پروفایل خود را تکمیل کنید'), account()],
           if (profileComplete && tab == 0) home(),
@@ -621,5 +678,6 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
           NavigationDestination(icon: Icon(Icons.edit_note_outlined), label: 'گزارش'),
           NavigationDestination(icon: Icon(Icons.person_outline), label: 'حساب'),
         ]),
-    ));
+    )));
+  }
 }
