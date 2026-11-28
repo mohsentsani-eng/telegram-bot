@@ -303,6 +303,8 @@ class _DailyReportScreenState extends State<DailyReportScreen> with WidgetsBindi
       final updated = await _store.read(_studentId!);
       if (!mounted) return;
       setState(() { _activities = updated; _retryNeeded = false; });
+      widget.onActivitiesChanged?.call(updated);
+      if (widget.active) unawaited(_loadFeedback());
       if (!quiet) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('$count فعالیت با سرور همگام شد.'),
       ));

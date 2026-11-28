@@ -6,6 +6,7 @@ on:
     paths:
       - 'mobile_app/**'
       - 'app/mobile_api.py'
+      - 'app/admin.py'
       - 'app/db.py'
       - 'app/migrations.py'
       - 'app/counselor_portal.py'
@@ -13,6 +14,11 @@ on:
       - 'tests/test_mobile_auth.py'
       - '.github/workflows/mobile-apk.yml'
   workflow_dispatch:
+    inputs:
+      api_origin:
+        description: 'Approved HTTPS test API origin. Leave empty for the loopback conference build.'
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -38,7 +44,8 @@ jobs:
       - name: Generate missing Android platform scaffold
         working-directory: mobile_app
         run: flutter create --platforms=android --project-name=taranom_hamdeli --org=ir.taranomhamdeli .
-      - name: Allow the loopback API in debug builds
+      - name: Allow the loopback API in demo builds
+        if: inputs.api_origin == ''
         working-directory: mobile_app
         run: python3 ../tools/configure_mobile_debug.py
       - name: Remove generated example test
@@ -69,15 +76,23 @@ jobs:
           mkdir -p "$HOME/.android"
           printf '%s' "$APEX_KEYSTORE" | base64 --decode > "$HOME/.android/debug.keystore"
           keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file "$RUNNER_TEMP/apex360-signer.der"
-      - name: Build installable test APK
+      - name: Build installable APK
         working-directory: mobile_app
-        run: flutter build apk --debug --dart-define=APEX_LOCAL_TEST=true
+        env:
+          APEX_API_ORIGIN: ${{ inputs.api_origin }}
+        run: |
+          if [ -z "$APEX_API_ORIGIN" ]; then
+            flutter build apk --debug --dart-define=APEX_LOCAL_TEST=true
+          else
+            python3 -c 'import os, re, sys; sys.exit(0 if re.fullmatch(r"https://[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+/?", os.environ["APEX_API_ORIGIN"]) else "Expected an HTTPS origin without a path or credentials")'
+            flutter build apk --debug --dart-define="API_BASE_URL=$APEX_API_ORIGIN"
+          fi
       - name: Verify APK identity and version
         working-directory: mobile_app
         run: |
           AAPT="$(find "${ANDROID_HOME}/build-tools" -name aapt -type f | sort -V | tail -1)"
           metadata="$("$AAPT" dump badging build/app/outputs/flutter-apk/app-debug.apk)"
-          grep -F "package: name='ir.taranomhamdeli.taranom_hamdeli' versionCode='44' versionName='0.16.0'" <<< "$metadata"
+          grep -F "package: name='ir.taranomhamdeli.taranom_hamdeli' versionCode='45' versionName='0.17.0'" <<< "$metadata"
       - name: Verify APK signature
         working-directory: mobile_app
         env:
@@ -99,7 +114,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: apex360-android-test-apk
+          name: apex360-android-${{ inputs.api_origin != '' && 'https-test' || 'conference-demo' }}
           path: mobile_app/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 14

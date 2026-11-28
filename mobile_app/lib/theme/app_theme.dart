@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
 
 abstract final class AppColors {
-  static const primary = Color(0xFF58409F);
+  static const primary = Color(0xFF5140A3);
   static const deepBlue = Color(0xFF392B65);
   static const sky = Color(0xFFEFE9FC);
-  static const canvas = Color(0xFFF9F7FD);
+  static const canvas = Color(0xFFF5F5FC);
   static const ink = Color(0xFF202B3C);
   static const muted = Color(0xFF68758A);
+  static const mint = Color(0xFFBDF6E3);
   static const warm = Color(0xFFF2B85B);
   static const success = Color(0xFF23865B);
   static const apexGradient = LinearGradient(
     begin: Alignment.topRight,
     end: Alignment.bottomLeft,
-    colors: [Color(0xFF4B328D), Color(0xFF265087), Color(0xFF146469)],
+    colors: [Color(0xFF2F245E), Color(0xFF4C4296), Color(0xFF265C72)],
   );
   static const border = Color(0xFFE7ECF3);
 }
@@ -57,6 +58,14 @@ abstract final class AppTheme {
           minimumSize: const Size(48, 50),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFFF9F8FD),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(

@@ -287,9 +287,38 @@ class MobileAuthService {
     return synced;
   }
 
+  static const _botUsername = 'TaranomHamDeliBot';
+
+  Future<void> openRegistration() async {
+    final uri = Uri.https('t.me', '/$_botUsername', {'start': 'apex360'});
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      throw StateError('باز کردن ربات ثبت‌نام ممکن نشد.');
+    }
+  }
+
+  Future<void> checkCentralWorkflow() async {
+    if (!isConfigured || isLocalTest) {
+      throw StateError('نشانی HTTPS سامانه مرکزی برای این ساخت تنظیم نشده است.');
+    }
+    final response = await _get(Uri.parse('$_endpoint/api/v1/mobile/capabilities'))
+        .timeout(const Duration(seconds: 8));
+    if (response.statusCode != 200) {
+      throw StateError('قرارداد اتصال در سامانه در دسترس نیست (کد ${response.statusCode}).');
+    }
+    final data = jsonDecode(response.body);
+    if (data is! Map || data['api_version'] != 1 ||
+        data['student_workflow_version'] != 17 ||
+        data['authentication'] != 'telegram-deep-link-approval' ||
+        data['counselor_assignment'] != true || data['plan_receipts'] != true ||
+        data['report_feedback'] != true) {
+      throw StateError('سامانه هنوز چرخهٔ دانش‌آموز و مشاور نسخهٔ ۱۷ را اعلام نکرده است.');
+    }
+  }
+
   Future<void> loginWithTelegram({required void Function(String) onStatus}) async {
-    if (!isConfigured) throw Exception('نشانی امن سرور هنوز در نسخه آزمایشی تنظیم نشده است.');
-    onStatus('در حال ساخت درخواست ورود امن...');
+    onStatus('در حال بررسی اتصال به سامانهٔ مرکزی…');
+    await checkCentralWorkflow();
+    onStatus('در حال ساخت درخواست ورود امن…');
     final created = await _post(
       Uri.parse('$_endpoint/api/v1/mobile/auth/challenge'),
       headers: {'Content-Type': 'application/json'},
@@ -307,7 +336,11 @@ class MobileAuthService {
     final challenge = jsonDecode(created.body) as Map<String, dynamic>;
     final challengeId = challenge['challenge_id'] as String;
     final verificationUrl = Uri.parse(challenge['verification_url'] as String);
-    if (verificationUrl.scheme != 'https' || verificationUrl.host != 't.me') {
+    if (verificationUrl.scheme != 'https' || verificationUrl.host != 't.me' ||
+        verificationUrl.userInfo.isNotEmpty || verificationUrl.port != 443 ||
+        verificationUrl.hasFragment || verificationUrl.path != '/$_botUsername' ||
+        verificationUrl.queryParametersAll.length != 1 ||
+        verificationUrl.queryParametersAll['start']?.length != 1) {
       throw Exception('پیوند تأیید ورود معتبر نیست.');
     }
     final start = verificationUrl.queryParameters['start'];

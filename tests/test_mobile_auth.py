@@ -252,19 +252,33 @@ def test_local_api_login_plan_and_report_retry(tmp_path, monkeypatch):
         c.close()
 
 
-def test_v16_demo_registration_receipt_and_feedback(tmp_path, monkeypatch):
+def test_v17_central_routes_with_synthetic_accounts(tmp_path, monkeypatch):
     import re
 
     from fastapi.testclient import TestClient
 
-    from app import migrations
-    from tools.mobile_test_api import COUNSELOR_USERNAME, create_app, seed
+    from app import admin, migrations
+    from tools.mobile_test_api import ADMIN_USERNAME, COUNSELOR_USERNAME, create_app, seed
 
     monkeypatch.setattr(db, "DB", tmp_path / "demo.sqlite3")
     counselor = seed("fake-counselor-password", preconfigured=False)
+    monkeypatch.setenv("ADMIN_USERNAME", ADMIN_USERNAME)
+    monkeypatch.setenv("ADMIN_PASSWORD", "fake-admin-password")
+    monkeypatch.setenv("ADMIN_SECRET", "temporary-test-value")
+    inactive = db.add_counselor("مشاور غیرفعال")
+    with db.conn() as connection:
+        connection.execute("UPDATE counselors SET active=0 WHERE id=?", (inactive,))
     student = -1600
+    central = TestClient(admin.app, base_url="https://central.test")
+    central_login = central.post("/admin/login", data={
+        "username": ADMIN_USERNAME, "password": "fake-admin-password",
+    }, follow_redirects=False)
+    assert "secure" in central_login.headers["set-cookie"].lower()
+    assert central_login.headers["cache-control"] == "no-store"
+    assert central.get("/demo").status_code == 404
+    assert central.post("/api/v1/mobile/auth/local", json={"code": "student-code"}).status_code == 404
     client = TestClient(create_app("student-code", telegram_id=student,
-                                   operator_code="operator-code", counselor_id=counselor),
+                                   operator_code="operator-code"),
                         base_url="http://127.0.0.1")
     login_path = "/api/v1/mobile/auth/local"
     login_data = {"code": "student-code"}
@@ -275,55 +289,84 @@ def test_v16_demo_registration_receipt_and_feedback(tmp_path, monkeypatch):
     for _ in range(2):
         assert client.post("/demo", data={**registration, "code": "operator-code"},
                            follow_redirects=False).status_code == 303
-    token = client.post(login_path, json=login_data).json()["access_token"]
+    assert client.post(login_path, json=login_data).status_code == 200
+    assert central.get("/api/v1/mobile/capabilities").json()["student_workflow_version"] == 17
+    # Use the same challenge endpoints and approval helper called by the Telegram bot.
+    challenge_path = "/api/v1/mobile/auth/challenge"
+    challenge = central.post(challenge_path, json={"platform": "flutter"}).json()
+    _, challenge_id, secret = challenge["verification_url"].split("start=", 1)[1].split("_")
+    poll = f"{challenge_path}/{challenge_id}"
+    assert central.post(poll, json={"secret": secret}).json() == {"status": "pending"}
+    assert not mobile_api.approve_mobile_challenge(challenge_id, secret, student - 1)
+    assert mobile_api.approve_mobile_challenge(challenge_id, secret, student)
+    token = central.post(poll, json={"secret": secret}).json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
     context = "/api/v1/mobile/student/counselor"
-    assert client.get(context, headers=headers).json() == {"assignment": None, "plan": None}
-    for _ in range(2):
-        assert client.post("/demo", data={"code": "operator-code", "action": "assign"},
-                           follow_redirects=False).status_code == 303
-    assert client.get(context, headers=headers).json()["assignment"]["name"] == "مشاور آزمایشی ترنم"
+    assert central.get(context, headers=headers).json() == {"assignment": None, "plan": None}
+    assignment_url = f"/admin/student/{student}/assign-counselor"
+    anonymous = TestClient(admin.app, base_url="https://central.test")
+    assert anonymous.post(assignment_url, data={"counselor_id": counselor},
+                       follow_redirects=False).headers["location"] == "/admin/login"
 
+    manager = central
+    assignment_form = manager.get(f"/admin/student/{student}/reports")
+    assignment_csrf = re.search(r'name="csrf" value="([^"]+)"', assignment_form.text)[1]
+    assert manager.post(assignment_url, data={"counselor_id": counselor}).status_code == 403
+    assert manager.post(assignment_url, data={
+        "counselor_id": inactive, "csrf": assignment_csrf,
+    }).status_code == 404
+    assert manager.post(assignment_url, data={
+        "counselor_id": counselor, "csrf": assignment_csrf,
+    }, follow_redirects=False).status_code == 303
+    assigned = central.get(context, headers=headers).json()["assignment"]
+    assert assigned["name"] == "مشاور آزمایشی ترنم"
+
+    counselor_web = TestClient(admin.app, base_url="https://central.test")
     portal = f"/counselor/student/{student}"
     feedback_path = "/api/v1/mobile/student/study-activities/feedback"
-    assert client.get(feedback_path).status_code == 401
-    assert client.post("/counselor/login", data={
+    assert central.get(feedback_path).status_code == 401
+    assert counselor_web.post("/counselor/login", data={
         "username": COUNSELOR_USERNAME, "password": "fake-counselor-password",
     }, follow_redirects=False).status_code == 303
-    csrf = re.search(r'name="csrf" value="([^"]+)"', client.get(portal).text)[1]
-    assert client.post(f"{portal}/plan", data={
+    csrf = re.search(r'name="csrf" value="([^"]+)"', counselor_web.get(portal).text)[1]
+    assert counselor_web.post(f"{portal}/plan", data={
         "csrf": csrf, "title": "مرور", "schedule": "شنبه | 16:00 | 16:45 | زیست",
     }, follow_redirects=False).status_code == 303
-    plan = client.get(context, headers=headers).json()["plan"]
+    # Repeating the same assignment must preserve the published plan and its assignment ID.
+    assert manager.post(assignment_url, data={
+        "counselor_id": counselor, "csrf": assignment_csrf,
+    }, follow_redirects=False).status_code == 303
+    assert central.get(context, headers=headers).json()["assignment"] == assigned
+    plan = central.get(context, headers=headers).json()["plan"]
     assert plan["received_at"] is None
     receipt_path = f"{context}/plans/{plan['id']}/receipt"
-    assert client.post(receipt_path).status_code == 401
-    assert client.post(f"{context}/plans/999/receipt", headers=headers).status_code == 404
-    receipt = client.post(receipt_path, headers=headers).json()
+    assert central.post(receipt_path).status_code == 401
+    assert central.post(f"{context}/plans/999/receipt", headers=headers).status_code == 404
+    receipt = central.post(receipt_path, headers=headers).json()
     assert receipt["received_at"]
-    assert client.post(receipt_path, headers=headers).json() == receipt
-    assert "دریافت توسط دانش‌آموز تأیید شده" in client.get(portal).text
+    assert central.post(receipt_path, headers=headers).json() == receipt
+    assert "دریافت توسط دانش‌آموز تأیید شده" in counselor_web.get(portal).text
 
     event = {
         "event_id": "demo-v16-report-001", "subject": "زیست", "activity_type": "study",
         "duration_minutes": 45, "test_count": 12, "created_at": "2026-11-27T12:00:00Z",
     }
     submit = "/api/v1/mobile/student/study-activities/sync"
-    assert client.post(submit, json={"activities": [event, event]}, headers=headers).json() == {
+    assert central.post(submit, json={"activities": [event, event]}, headers=headers).json() == {
         "accepted_event_ids": [event["event_id"]],
     }
     message = {"event_id": event["event_id"], "message": "یک مرور کوتاه کافی است.", "csrf": csrf}
-    assert client.post(f"{portal}/feedback", data={**message, "csrf": "invalid"}).status_code == 403
-    assert client.post(f"/counselor/student/{student - 1}/feedback", data=message).status_code == 404
-    assert client.post(f"{portal}/feedback", data=message, follow_redirects=False).status_code == 303
-    feedback = client.get(feedback_path, headers=headers).json()["feedback"]
+    assert counselor_web.post(f"{portal}/feedback", data={**message, "csrf": "invalid"}).status_code == 403
+    assert counselor_web.post(f"/counselor/student/{student - 1}/feedback", data=message).status_code == 404
+    assert counselor_web.post(f"{portal}/feedback", data=message, follow_redirects=False).status_code == 303
+    feedback = central.get(feedback_path, headers=headers).json()["feedback"]
     assert [(row["event_id"], row["message"]) for row in feedback] == [
         (event["event_id"], message["message"]),
     ]
 
     db.assign_counselor(student, db.add_counselor("مشاور دوم"))
-    assert client.post(f"{portal}/feedback", data=message).status_code == 404
-    assert client.post(receipt_path, headers=headers).status_code == 404
-    assert client.get("/api/v1/mobile/student/study-plan", headers=headers).json() == {"plan": None}
-    assert client.get(feedback_path, headers=headers).json() == {"feedback": []}
+    assert counselor_web.post(f"{portal}/feedback", data=message).status_code == 404
+    assert central.post(receipt_path, headers=headers).status_code == 404
+    assert central.get("/api/v1/mobile/student/study-plan", headers=headers).json() == {"plan": None}
+    assert central.get(feedback_path, headers=headers).json() == {"feedback": []}
     assert not migrations.migrate()

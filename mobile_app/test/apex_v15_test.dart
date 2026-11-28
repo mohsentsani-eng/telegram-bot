@@ -16,20 +16,41 @@ void main() {
   testWidgets('reads the version from package metadata across navigation', (tester) async {
     PackageInfo.setMockInitialValues(
       appName: 'Apex360', packageName: 'ir.taranomhamdeli.taranom_hamdeli',
-      version: '0.16.0', buildNumber: '44', buildSignature: '',
+      version: '0.17.0', buildNumber: '45', buildSignature: '',
     );
     FlutterSecureStorage.setMockInitialValues({});
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(const TaranomApp());
     await tester.pumpAndSettle();
-    expect(find.text('Apex360 · 0.16.0+44'), findsOneWidget);
+    expect(find.text('Apex360 · 0.17.0+45'), findsOneWidget);
     final offline = find.text('باز کردن داشبورد آفلاین');
     await tester.ensureVisible(offline);
     await tester.tap(offline);
     await tester.pumpAndSettle();
-    expect(find.text('Apex360 · 0.16.0+44'), findsOneWidget);
+    expect(find.text('Apex360 · 0.17.0+45'), findsOneWidget);
     expect(find.text('ابتدا پروفایل خود را تکمیل کنید'), findsOneWidget);
   });
+
+  test('requires the central workflow before requesting Telegram approval', () async {
+    var compatible = false;
+    final auth = MobileAuthService(client: MockClient((request) async {
+      expect(request.method, 'GET');
+      expect(request.url.path, '/api/v1/mobile/capabilities');
+      expect(request.headers.containsKey('Authorization'), isFalse);
+      expect(request.followRedirects, isFalse);
+      return http.Response(jsonEncode({
+        'api_version': 1,
+        'student_workflow_version': compatible ? 17 : 16,
+        'authentication': 'telegram-deep-link-approval',
+        'counselor_assignment': true,
+        'plan_receipts': true,
+        'report_feedback': true,
+      }), 200);
+    }));
+    await expectLater(auth.loginWithTelegram(onStatus: (_) {}), throwsStateError);
+    compatible = true;
+    await auth.checkCentralWorkflow();
+  }, skip: const String.fromEnvironment('API_BASE_URL').isEmpty);
 
   test('keeps reports pending until matching server acknowledgment', () async {
     FlutterSecureStorage.setMockInitialValues({

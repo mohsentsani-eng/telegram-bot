@@ -777,10 +777,36 @@ def list_counselors(active_only=True):
     rows=c.execute(sql+" ORDER BY name").fetchall(); c.close(); return rows
 
 def assign_counselor(student_id, counselor_id):
-    c=conn()
-    c.execute("UPDATE student_counselor_assignments SET active=0 WHERE student_id=? AND active=1",(student_id,))
-    c.execute("INSERT INTO student_counselor_assignments(student_id,counselor_id,active) VALUES(?,?,1)",(student_id,counselor_id))
-    c.commit(); c.close()
+    """Assign an active counselor to a registered student, preserving history."""
+    c = conn()
+    try:
+        c.execute("BEGIN IMMEDIATE")
+        eligible = c.execute(
+            """SELECT 1 FROM students s, counselors co
+               WHERE s.id=? AND s.registered=1 AND co.id=? AND co.active=1""",
+            (student_id, counselor_id),
+        ).fetchone()
+        if not eligible:
+            return False
+        current = c.execute(
+            """SELECT counselor_id FROM student_counselor_assignments
+               WHERE student_id=? AND active=1 ORDER BY id DESC LIMIT 1""",
+            (student_id,),
+        ).fetchone()
+        if current and current["counselor_id"] == counselor_id:
+            return True
+        c.execute(
+            "UPDATE student_counselor_assignments SET active=0 WHERE student_id=? AND active=1",
+            (student_id,),
+        )
+        c.execute(
+            "INSERT INTO student_counselor_assignments(student_id,counselor_id,active) VALUES(?,?,1)",
+            (student_id, counselor_id),
+        )
+        c.commit()
+        return True
+    finally:
+        c.close()
 
 def active_counselor(student_id):
     c=conn()

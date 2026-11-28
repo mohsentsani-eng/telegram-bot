@@ -94,6 +94,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       if (DateUtils.isSameDay(today, day)) todayTests += activity['test_count'] as int;
     }
     final todayMinutes = minutesByDay[DateUtils.dateOnly(today)] ?? 0;
+    final pending = _activities.where((activity) => activity['sync_state'] != 'synced').length;
     final guidance = todayMinutes > 0
         ? 'مطالعه امروزت ثبت شده. اگر انرژی داری، یک مرور کوتاه کافی است.'
         : 'از یک درس که می‌شناسی شروع کن. یک مرور کوتاه هم حساب می‌شود.';
@@ -137,14 +138,38 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
             ]),
           ),
           const SizedBox(height: 14),
-          Text('هدف امروز', style: theme.textTheme.titleLarge),
-          const SizedBox(height: 6),
-          Card(child: ListTile(
-            leading: Icon(todayMinutes > 0 ? Icons.check_circle_outline : Icons.flag_outlined),
-            title: Text(todayMinutes > 0 ? '$todayMinutes دقیقه مطالعه · $todayTests تست'
-                : 'یک فعالیت کوتاه برای شروع'),
-            subtitle: Text(todayMinutes > 0 ? 'نشان امروز · یک قدم برداشتی' : 'فعالیت را از برنامه مشاور یا برنامه شخصی انتخاب کن.'),
-          )),
+          Row(children: [
+            Expanded(child: Text('امروز', style: theme.textTheme.titleLarge)),
+            if (todayMinutes > 0)
+              const Chip(
+                avatar: Icon(Icons.eco_rounded, size: 17),
+                label: Text('یک قدم'),
+                backgroundColor: AppColors.mint,
+              ),
+          ]),
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: Column(children: [
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: AppColors.sky,
+                  child: Icon(Icons.flag_outlined, color: AppColors.primary),
+                ),
+                title: Text(todayMinutes > 0 ? '$todayMinutes دقیقه مطالعه · $todayTests تست'
+                    : 'یک فعالیت کوتاه برای شروع'),
+                subtitle: Text(todayMinutes > 0 ? 'مطالعهٔ امروز روی گوشی ثبت شده است.'
+                    : 'از برنامه یک درس یا تمرین کوچک انتخاب کن.'),
+                onTap: () => _goToTab(1),
+              ),
+              if (pending > 0)
+                ListTile(
+                  leading: const Icon(Icons.cloud_upload_outlined),
+                  title: Text('$pending گزارش در صف ارسال'),
+                  trailing: const Icon(Icons.chevron_left_rounded),
+                  onTap: () => _goToTab(3),
+                ),
+            ]),
+          ),
           const SizedBox(height: 10),
           Wrap(spacing: 8, runSpacing: 6, children: [
             FilledButton.icon(
@@ -158,7 +183,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               label: const Text('برنامه مشاور'),
             ),
           ]),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           ApexWeekChart(
             title: 'مطالعه در هفت روز گذشته',
             unit: 'دقیقه',

@@ -81,6 +81,7 @@ def mobile_capabilities():
         "api_version": 1,
         "minimum_client_version": "0.1.0",
         "roles": ["student"],
+        "student_workflow_version": 17,
         "counselor_assignment": True,
         "plan_receipts": True,
         "report_feedback": True,
