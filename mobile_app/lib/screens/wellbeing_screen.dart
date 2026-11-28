@@ -33,7 +33,7 @@ class _WellbeingScreenState extends State<WellbeingScreen> {
     (
       Icons.sentiment_satisfied_alt_rounded,
       'آرام',
-      'اگر دوست داری، این آرامش را با یک مرور کوتاه همراه کن.'
+      'اگر دوست داری، این آرامش را با یک مرور کوتاه همراه کن.',
     ),
     (
       Icons.sentiment_very_satisfied_rounded,
@@ -104,10 +104,71 @@ class _WellbeingScreenState extends State<WellbeingScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _moodTile(
+    BuildContext context,
+    int index,
+    IconData face,
+    String label,
+  ) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final selected = _selected == index;
+    final foreground = selected ? colors.onPrimaryContainer : colors.onSurface;
+    void select() => setState(() => _selected = index);
+    return Semantics(
+      label: label,
+      selected: selected,
+      button: true,
+      onTap: _busy ? null : select,
+      child: ExcludeSemantics(
+        child: Material(
+          color: selected
+              ? colors.primaryContainer
+              : colors.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(
+              color: selected ? colors.primary : colors.outlineVariant,
+            ),
+          ),
+          child: InkWell(
+            onTap: _busy ? null : select,
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: 19,
+                    backgroundColor: const Color(0xFFFFD875),
+                    foregroundColor: const Color(0xFF533512),
+                    child: Icon(face, size: 30),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: foreground,
+                    ),
+                  ),
+                  Icon(
+                    selected ? Icons.check_circle : Icons.circle_outlined,
+                    color: foreground,
+                    size: 16,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('حال روزانه')),
       body: ListView(
@@ -122,65 +183,19 @@ class _WellbeingScreenState extends State<WellbeingScreen> {
           else if (_unavailable)
             const ApexSection('خواندن حال امروز ممکن نشد')
           else ...[
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final (index, (face, label, _)) in _moods.indexed)
-                  Semantics(
-                    label: label,
-                    selected: _selected == index,
-                    button: true,
-                    onTap:
-                        _busy ? null : () => setState(() => _selected = index),
-                    child: ExcludeSemantics(
-                      child: Material(
-                        color: _selected == index
-                            ? colors.primaryContainer
-                            : colors.surfaceContainerLow,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                          side: BorderSide(
-                            color: _selected == index
-                                ? colors.primary
-                                : colors.outlineVariant,
-                          ),
-                        ),
-                        child: InkWell(
-                          onTap: _busy
-                              ? null
-                              : () => setState(() => _selected = index),
-                          borderRadius: BorderRadius.circular(20),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 10,
-                              horizontal: 14,
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                CircleAvatar(
-                                  radius: 19,
-                                  backgroundColor: const Color(0xFFFFD875),
-                                  foregroundColor: const Color(0xFF533512),
-                                  child: Icon(face, size: 30),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(label, style: theme.textTheme.labelLarge),
-                                Icon(
-                                  _selected == index
-                                      ? Icons.check_circle
-                                      : Icons.circle_outlined,
-                                  size: 16,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
+            LayoutBuilder(
+              builder: (context, constraints) => Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: [
+                  for (final (index, (face, label, _)) in _moods.indexed)
+                    SizedBox(
+                      width: (constraints.maxWidth - 16) / 3,
+                      child: _moodTile(context, index, face, label),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
             if (_selected case final int index)
               Padding(
@@ -193,8 +208,9 @@ class _WellbeingScreenState extends State<WellbeingScreen> {
                 ),
               ),
             FilledButton.icon(
-              onPressed:
-                  _busy || _selected == null ? null : () => _save(_selected),
+              onPressed: _busy || _selected == null
+                  ? null
+                  : () => _save(_selected),
               icon: const Icon(Icons.check_rounded),
               label: Text(
                 _saved != null && _saved == _selected
