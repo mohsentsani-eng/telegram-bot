@@ -6,22 +6,33 @@ import html
 import json
 import sqlite3
 
-from fastapi import FastAPI, Request, Form, UploadFile, File
+from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import db
 from . import psych_access
 from .counselor_portal import router as counselor_router, _hash_password
+from .mobile_api import router as mobile_router
 
 
 app = FastAPI(title="Taranom Hamdeli Admin")
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("ADMIN_SECRET") or secrets.token_urlsafe(48),
+    https_only=True,
 )
 
 app.include_router(counselor_router)
+app.include_router(mobile_router)
+
+
+@app.middleware("http")
+async def protect_private_responses(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith(("/admin", "/counselor", "/api/v1/mobile")):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def esc(x):
@@ -177,10 +188,11 @@ def login(
             "تنظیم امنیت",
             "<div class='err'>ورود مدیر تا زمان تنظیم ADMIN_USERNAME، ADMIN_PASSWORD و ADMIN_SECRET در تنظیمات محیط اجرا غیرفعال است.</div>",
         )
-    good_user = secrets.compare_digest(username, configured_user)
-    good_pass = secrets.compare_digest(password, configured_pass)
+    good_user = secrets.compare_digest(username.encode(), configured_user.encode())
+    good_pass = secrets.compare_digest(password.encode(), configured_pass.encode())
 
     if good_user and good_pass:
+        req.session.clear()
         req.session["admin"] = True
         return RedirectResponse("/admin", status_code=303)
 
@@ -1031,6 +1043,10 @@ def student_reports(req: Request, student_id: int):
         f"<td>{esc(r['motivation'] or '—')}/۵</td><td>{esc(r['status'])}</td>"
         f"<td>{esc(r['analysis_status'])}</td></tr>" for r in rows
     )
+    assignment_csrf = req.session.get("assignment_csrf")
+    if assignment_csrf is None:
+        assignment_csrf = secrets.token_urlsafe(24)
+        req.session["assignment_csrf"] = assignment_csrf
     counselors_rows="".join(f"<option value='{r['id']}'>{esc(r['name'])}</option>" for r in db.list_counselors(True))
     active=db.active_counselor(student_id)
     summary=db.weekly_summary(student_id,7)
@@ -1047,6 +1063,7 @@ def student_reports(req: Request, student_id: int):
       <div class="card">تست/تمرین هفته<div class="n">{summary['practice']}</div></div>
     </div>
     <form method="post" action="/admin/student/{student_id}/assign-counselor" class="card">
+      <input type="hidden" name="csrf" value="{esc(assignment_csrf)}">
       <label>تخصیص مشاور</label>
       <select name="counselor_id" required>{counselors_rows or '<option value="">ابتدا مشاور اضافه کنید</option>'}</select>
       <button>ثبت تخصیص</button>
@@ -1135,9 +1152,14 @@ def set_counselor_account(req: Request, counselor_id: int = Form(...), username:
     return RedirectResponse("/admin/counselors",status_code=303)
 
 @app.post("/admin/student/{student_id}/assign-counselor")
-def assign_counselor_admin(req: Request, student_id: int, counselor_id: int = Form(...)):
+def assign_counselor_admin(req: Request, student_id: int, counselor_id: int = Form(...),
+                           csrf: str = Form("", max_length=128)):
     if (g := guard(req)): return g
-    db.assign_counselor(student_id,counselor_id)
+    expected = req.session.get("assignment_csrf")
+    if not expected or not secrets.compare_digest(expected.encode(), csrf.encode()):
+        raise HTTPException(403, "invalid_assignment_form_token")
+    if not db.assign_counselor(student_id, counselor_id):
+        raise HTTPException(404, "student_or_active_counselor_unavailable")
     return RedirectResponse(f"/admin/student/{student_id}/reports", status_code=303)
 
 

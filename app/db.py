@@ -777,16 +777,168 @@ def list_counselors(active_only=True):
     rows=c.execute(sql+" ORDER BY name").fetchall(); c.close(); return rows
 
 def assign_counselor(student_id, counselor_id):
-    c=conn()
-    c.execute("UPDATE student_counselor_assignments SET active=0 WHERE student_id=? AND active=1",(student_id,))
-    c.execute("INSERT INTO student_counselor_assignments(student_id,counselor_id,active) VALUES(?,?,1)",(student_id,counselor_id))
-    c.commit(); c.close()
+    """Assign an active counselor to a registered student, preserving history."""
+    c = conn()
+    try:
+        c.execute("BEGIN IMMEDIATE")
+        eligible = c.execute(
+            """SELECT 1 FROM students s, counselors co
+               WHERE s.id=? AND s.registered=1 AND co.id=? AND co.active=1""",
+            (student_id, counselor_id),
+        ).fetchone()
+        if not eligible:
+            return False
+        current = c.execute(
+            """SELECT counselor_id FROM student_counselor_assignments
+               WHERE student_id=? AND active=1 ORDER BY id DESC LIMIT 1""",
+            (student_id,),
+        ).fetchone()
+        if current and current["counselor_id"] == counselor_id:
+            return True
+        c.execute(
+            "UPDATE student_counselor_assignments SET active=0 WHERE student_id=? AND active=1",
+            (student_id,),
+        )
+        c.execute(
+            "INSERT INTO student_counselor_assignments(student_id,counselor_id,active) VALUES(?,?,1)",
+            (student_id, counselor_id),
+        )
+        c.commit()
+        return True
+    finally:
+        c.close()
 
 def active_counselor(student_id):
     c=conn()
     r=c.execute("""SELECT c.* FROM counselors c JOIN student_counselor_assignments a ON a.counselor_id=c.id
                    WHERE a.student_id=? AND a.active=1 ORDER BY a.id DESC LIMIT 1""",(student_id,)).fetchone()
     c.close(); return r
+
+def publish_counselor_plan(student_id, counselor_id, title, schedule):
+    """Publish against the current assignment while preserving all prior plans."""
+    c = conn()
+    try:
+        assignment = c.execute(
+            """SELECT a.id, a.counselor_id, a.assigned_at, co.name
+               FROM student_counselor_assignments a JOIN counselors co ON co.id=a.counselor_id
+               WHERE a.student_id=? AND a.active=1 AND co.active=1 ORDER BY a.id DESC LIMIT 1""",
+            (student_id,),
+        ).fetchone()
+        if assignment is None or assignment["counselor_id"] != counselor_id:
+            return False
+        content = json.dumps({
+            "source": "counselor", "assignment_id": assignment["id"], "schedule": schedule,
+        }, ensure_ascii=False)
+        change = c.execute(
+            """INSERT INTO plans(student_id,title,content_json)
+               SELECT a.student_id, ?, ? FROM student_counselor_assignments a
+               JOIN counselors co ON co.id=a.counselor_id
+               WHERE a.id=? AND a.active=1 AND co.active=1""",
+            (title, content, assignment["id"]),
+        )
+        c.commit()
+        return change.rowcount == 1
+    finally:
+        c.close()
+
+
+def mobile_counselor_plan(student_id):
+    c = conn()
+    try:
+        # Read assignment and its latest publication from the same snapshot.
+        c.execute("BEGIN")
+        assignment = c.execute(
+            """SELECT a.id, a.assigned_at, co.name
+               FROM student_counselor_assignments a JOIN counselors co ON co.id=a.counselor_id
+               WHERE a.student_id=? AND a.active=1 AND co.active=1 ORDER BY a.id DESC LIMIT 1""",
+            (student_id,),
+        ).fetchone()
+        if assignment is None:
+            return {"assignment": None, "plan": None}
+        row = c.execute(
+            """SELECT id,title,created_at,content_json,
+                      (SELECT received_at FROM mobile_plan_receipts WHERE plan_id=plans.id) received_at
+               FROM plans
+               WHERE student_id=? AND status='active'
+                 AND CASE WHEN json_valid(content_json) THEN
+                    json_extract(content_json,'$.source')='counselor'
+                    AND json_extract(content_json,'$.assignment_id')=?
+                 ELSE 0 END
+               ORDER BY id DESC LIMIT 1""",
+            (student_id, assignment["id"]),
+        ).fetchone()
+        plan = None if row is None else {
+            "id": row["id"], "title": row["title"], "created_at": row["created_at"],
+            "schedule": json.loads(row["content_json"])["schedule"],
+            "received_at": row["received_at"],
+        }
+        return {"assignment": dict(assignment), "plan": plan}
+    finally:
+        c.close()
+
+
+def acknowledge_mobile_plan(student_id, plan_id):
+    c = conn()
+    try:
+        receipt = c.execute(
+            """INSERT INTO mobile_plan_receipts(plan_id)
+               SELECT p.id FROM plans p
+               JOIN student_counselor_assignments a ON a.student_id=p.student_id
+               JOIN counselors co ON co.id=a.counselor_id
+               WHERE p.id=? AND p.student_id=? AND p.status='active'
+                 AND a.active=1 AND co.active=1
+                 AND CASE WHEN json_valid(p.content_json) THEN
+                     json_extract(p.content_json,'$.source')='counselor'
+                     AND json_extract(p.content_json,'$.assignment_id')=a.id
+                 ELSE 0 END
+               ON CONFLICT(plan_id) DO UPDATE SET received_at=mobile_plan_receipts.received_at
+               RETURNING received_at""",
+            (plan_id, student_id),
+        ).fetchone()
+        c.commit()
+        return receipt["received_at"] if receipt else None
+    finally:
+        c.close()
+
+
+def write_mobile_feedback(student_id, event_id, counselor_id, message):
+    c = conn()
+    try:
+        updated = c.execute(
+            """INSERT INTO mobile_report_feedback(activity_id,assignment_id,message)
+               SELECT r.id,a.id,? FROM mobile_study_activities r
+               JOIN student_counselor_assignments a ON a.student_id=r.student_id
+               JOIN counselors co ON co.id=a.counselor_id
+               JOIN counselor_accounts ca ON ca.counselor_id=co.id
+               WHERE r.student_id=? AND r.event_id=? AND a.counselor_id=?
+                 AND a.active=1 AND co.active=1 AND ca.active=1
+               ON CONFLICT(activity_id,assignment_id) DO UPDATE
+               SET message=excluded.message,updated_at=CURRENT_TIMESTAMP""",
+            (message, student_id, event_id, counselor_id),
+        )
+        c.commit()
+        return updated.rowcount == 1
+    finally:
+        c.close()
+
+
+def mobile_report_feedback(student_id):
+    c = conn()
+    try:
+        return [dict(row) for row in c.execute(
+            """SELECT r.event_id,r.subject,f.message,f.updated_at,co.name counselor_name
+               FROM mobile_report_feedback f
+               JOIN mobile_study_activities r ON r.id=f.activity_id
+               JOIN student_counselor_assignments a
+                 ON a.id=f.assignment_id AND a.student_id=r.student_id
+               JOIN counselors co ON co.id=a.counselor_id
+               WHERE r.student_id=? AND a.active=1 AND co.active=1
+               ORDER BY f.updated_at DESC,r.id DESC LIMIT 45""",
+            (student_id,),
+        )]
+    finally:
+        c.close()
+
 
 def add_counselor_note(student_id, counselor_id, note):
     c=conn(); c.execute("INSERT INTO counselor_notes(student_id,counselor_id,note) VALUES(?,?,?)",(student_id,counselor_id,note)); c.commit(); c.close()

@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from . import db
 
-TARGET_VERSION = 5
+TARGET_VERSION = 8
 
 def _backup_path():
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -380,6 +380,74 @@ def migrate():
             ON counselor_accounts(active,username);
         """)
         c.execute("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(5,CURRENT_TIMESTAMP)")
+
+    # v6: short-lived Telegram login challenges and revocable mobile sessions.
+    # Additive only; existing student records and academic history are untouched.
+    if current < 6:
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS mobile_auth_challenges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            challenge_id TEXT NOT NULL UNIQUE,
+            secret_hash TEXT NOT NULL,
+            telegram_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'pending',
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            approved_at TEXT,
+            consumed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_mobile_challenges_status_expiry
+            ON mobile_auth_challenges(status,expires_at);
+        CREATE TABLE IF NOT EXISTS mobile_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER NOT NULL,
+            access_token_hash TEXT NOT NULL UNIQUE,
+            refresh_token_hash TEXT NOT NULL UNIQUE,
+            access_expires_at TEXT NOT NULL,
+            refresh_expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            revoked_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_mobile_sessions_telegram
+            ON mobile_sessions(telegram_id,revoked_at);
+        """)
+        c.execute("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(6,CURRENT_TIMESTAMP)")
+
+    # v7: idempotent offline study activity ingestion, isolated from legacy daily reports.
+    if current < 7:
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS mobile_study_activities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            event_id TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            activity_type TEXT NOT NULL,
+            duration_minutes INTEGER NOT NULL,
+            test_count INTEGER NOT NULL DEFAULT 0,
+            client_created_at TEXT NOT NULL,
+            received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(student_id,event_id),
+            FOREIGN KEY(student_id) REFERENCES students(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_mobile_study_student_date
+            ON mobile_study_activities(student_id,client_created_at);
+        """)
+        c.execute("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(7,CURRENT_TIMESTAMP)")
+
+    if current < 8:
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS mobile_plan_receipts (
+            plan_id INTEGER PRIMARY KEY REFERENCES plans(id),
+            received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS mobile_report_feedback (
+            activity_id INTEGER NOT NULL REFERENCES mobile_study_activities(id),
+            assignment_id INTEGER NOT NULL REFERENCES student_counselor_assignments(id),
+            message TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(activity_id, assignment_id)
+        );
+        """)
 
     c.execute("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(?,CURRENT_TIMESTAMP)", (TARGET_VERSION,))
     c.commit()

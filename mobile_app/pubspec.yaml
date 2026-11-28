@@ -1,0 +1,32 @@
+name: taranom_hamdeli
+description: Student-first offline-ready mobile app for Taranom Hamdeli.
+publish_to: "none"
+version: 0.20.0+48
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+dependencies:
+  flutter_localizations:
+    sdk: flutter
+  flutter:
+    sdk: flutter
+  package_info_plus: ^8.3.1
+  cupertino_icons: ^1.0.8
+  http: ^1.2.2
+  url_launcher: ^6.3.1
+  flutter_secure_storage: ^9.2.2
+  shared_preferences: ^2.3.2
+  shamsi_date: ^1.0.2
+  cryptography: ^2.7.0
+  file_picker: ^10.3.10
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: Vazirmatn
+      fonts:
+        - asset: assets/fonts/Vazirmatn-Regular.ttf
+        - asset: assets/fonts/Vazirmatn-Bold.ttf
+          weight: 700
