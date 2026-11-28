@@ -1,5 +1,7 @@
 """Isolated mobile login smoke tests; never use the production database."""
 import sqlite3
+
+import pytest
 from pathlib import Path
 
 from app import db, mobile_api
@@ -252,12 +254,69 @@ def test_local_api_login_plan_and_report_retry(tmp_path, monkeypatch):
         c.close()
 
 
-def test_v17_central_routes_with_synthetic_accounts(tmp_path, monkeypatch):
+def _serve_https(app, tmp_path, stack):
+    import socket
+    import ssl
+    import subprocess
+    import threading
+    import time
+
+    import httpx
+    import uvicorn
+
+    cert = tmp_path / "test-cert.pem"
+    key = tmp_path / "test-key.pem"
+    subprocess.run([
+        "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+        "-subj", "/CN=localhost", "-addext", "subjectAltName=IP:127.0.0.1",
+        "-keyout", str(key), "-out", str(cert),
+    ], check=True, capture_output=True)
+    sock = stack.enter_context(socket.socket())
+    sock.bind(("127.0.0.1", 0))
+    origin = f"https://127.0.0.1:{sock.getsockname()[1]}"
+    server = uvicorn.Server(uvicorn.Config(
+        app, ssl_certfile=str(cert), ssl_keyfile=str(key), access_log=False,
+    ))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
+    thread.start()
+
+    def stop():
+        server.should_exit = True
+        thread.join(timeout=10)
+        assert not thread.is_alive()
+
+    stack.callback(stop)
+    for _ in range(100):
+        if server.started:
+            break
+        time.sleep(.05)
+    else:
+        raise RuntimeError("HTTPS fixture did not start")
+    tls = ssl.create_default_context(cafile=str(cert))
+
+    def client():
+        return stack.enter_context(httpx.Client(base_url=origin, verify=tls, trust_env=False))
+
+    return origin, str(cert), client
+
+
+@pytest.fixture
+def https_service(tmp_path):
+    from contextlib import ExitStack
+    from app import admin
+
+    with ExitStack() as stack:
+        yield _serve_https(admin.app, tmp_path, stack)
+
+
+def test_v18_central_https_with_synthetic_accounts(tmp_path, monkeypatch, https_service):
     import re
 
+    import httpx
     from fastapi.testclient import TestClient
 
-    from app import admin, migrations
+    from app import migrations
+    from tools.mobile_check import check_origin
     from tools.mobile_test_api import ADMIN_USERNAME, COUNSELOR_USERNAME, create_app, seed
 
     monkeypatch.setattr(db, "DB", tmp_path / "demo.sqlite3")
@@ -269,7 +328,14 @@ def test_v17_central_routes_with_synthetic_accounts(tmp_path, monkeypatch):
     with db.conn() as connection:
         connection.execute("UPDATE counselors SET active=0 WHERE id=?", (inactive,))
     student = -1600
-    central = TestClient(admin.app, base_url="https://central.test")
+    origin, cert, make_client = https_service
+    with pytest.raises(httpx.ConnectError):
+        check_origin(origin)
+    monkeypatch.setattr(mobile_api, "BOT_USERNAME", "ApexRehearsalBot")
+    with pytest.raises(ValueError, match="Telegram bot differs"):
+        check_origin(origin, ca_file=cert)
+    check_origin(origin, bot="ApexRehearsalBot", ca_file=cert)
+    central = make_client()
     central_login = central.post("/admin/login", data={
         "username": ADMIN_USERNAME, "password": "fake-admin-password",
     }, follow_redirects=False)
@@ -294,6 +360,7 @@ def test_v17_central_routes_with_synthetic_accounts(tmp_path, monkeypatch):
     # Use the same challenge endpoints and approval helper called by the Telegram bot.
     challenge_path = "/api/v1/mobile/auth/challenge"
     challenge = central.post(challenge_path, json={"platform": "flutter"}).json()
+    assert challenge["verification_url"].startswith("https://t.me/ApexRehearsalBot?start=")
     _, challenge_id, secret = challenge["verification_url"].split("start=", 1)[1].split("_")
     poll = f"{challenge_path}/{challenge_id}"
     assert central.post(poll, json={"secret": secret}).json() == {"status": "pending"}
@@ -304,7 +371,7 @@ def test_v17_central_routes_with_synthetic_accounts(tmp_path, monkeypatch):
     context = "/api/v1/mobile/student/counselor"
     assert central.get(context, headers=headers).json() == {"assignment": None, "plan": None}
     assignment_url = f"/admin/student/{student}/assign-counselor"
-    anonymous = TestClient(admin.app, base_url="https://central.test")
+    anonymous = make_client()
     assert anonymous.post(assignment_url, data={"counselor_id": counselor},
                        follow_redirects=False).headers["location"] == "/admin/login"
 
@@ -321,7 +388,7 @@ def test_v17_central_routes_with_synthetic_accounts(tmp_path, monkeypatch):
     assigned = central.get(context, headers=headers).json()["assignment"]
     assert assigned["name"] == "مشاور آزمایشی ترنم"
 
-    counselor_web = TestClient(admin.app, base_url="https://central.test")
+    counselor_web = make_client()
     portal = f"/counselor/student/{student}"
     feedback_path = "/api/v1/mobile/student/study-activities/feedback"
     assert central.get(feedback_path).status_code == 401
@@ -342,6 +409,15 @@ def test_v17_central_routes_with_synthetic_accounts(tmp_path, monkeypatch):
     receipt_path = f"{context}/plans/{plan['id']}/receipt"
     assert central.post(receipt_path).status_code == 401
     assert central.post(f"{context}/plans/999/receipt", headers=headers).status_code == 404
+    second = db.create_student({
+        "telegram_id": student - 1, "first_name": "نمونه", "last_name": "دوم", "grade": "دهم",
+    })
+    other_challenge = central.post(challenge_path, json={"platform": "flutter"}).json()
+    _, other_id, other_secret = other_challenge["verification_url"].split("start=", 1)[1].split("_")
+    assert mobile_api.approve_mobile_challenge(other_id, other_secret, second["telegram_id"])
+    other_token = central.post(f"{challenge_path}/{other_id}", json={"secret": other_secret}).json()["access_token"]
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+    assert central.post(receipt_path, headers=other_headers).status_code == 404
     receipt = central.post(receipt_path, headers=headers).json()
     assert receipt["received_at"]
     assert central.post(receipt_path, headers=headers).json() == receipt
@@ -355,10 +431,16 @@ def test_v17_central_routes_with_synthetic_accounts(tmp_path, monkeypatch):
     assert central.post(submit, json={"activities": [event, event]}, headers=headers).json() == {
         "accepted_event_ids": [event["event_id"]],
     }
+    proposed = {**event, "event_id": "atomic-retry-report-01"}
+    conflict = {**event, "duration_minutes": 46}
+    assert central.post(submit, json={"activities": [proposed, conflict]}, headers=headers).status_code == 409
+    with db.conn() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM mobile_study_activities").fetchone()[0] == 1
     message = {"event_id": event["event_id"], "message": "یک مرور کوتاه کافی است.", "csrf": csrf}
     assert counselor_web.post(f"{portal}/feedback", data={**message, "csrf": "invalid"}).status_code == 403
-    assert counselor_web.post(f"/counselor/student/{student - 1}/feedback", data=message).status_code == 404
+    assert counselor_web.post(f"/counselor/student/{second['id']}/feedback", data=message).status_code == 404
     assert counselor_web.post(f"{portal}/feedback", data=message, follow_redirects=False).status_code == 303
+    assert central.get(feedback_path, headers=other_headers).json() == {"feedback": []}
     feedback = central.get(feedback_path, headers=headers).json()["feedback"]
     assert [(row["event_id"], row["message"]) for row in feedback] == [
         (event["event_id"], message["message"]),

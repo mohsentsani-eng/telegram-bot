@@ -90,7 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(18),
                       decoration: BoxDecoration(
                         gradient: AppColors.apexGradient,
                         borderRadius: BorderRadius.circular(28),
@@ -114,15 +114,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 14),
                     Card(
                       child: Padding(
-                        padding: const EdgeInsets.all(18),
+                        padding: const EdgeInsets.all(14),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Text(_local ? 'ورود به نمایش همایش' : 'ورود دانش‌آموز',
+                            Text(_local ? 'ورود آزمایشی همایش' : 'ورود دانش‌آموز به سامانهٔ ترنم همدلی',
                                 style: theme.textTheme.titleLarge),
                             const SizedBox(height: 4),
                             Text(_local
-                                ? 'کد دانش‌آموز ساختگی را از رایانهٔ نمایش بگیر.'
+                                ? 'این نسخه به سرور محلی نمایش وصل می‌شود. کد حساب ساختگی را وارد کن.'
                                 : 'با همان حساب تلگرامی وارد شو که با آن ثبت‌نام کردی.'),
                             const SizedBox(height: 14),
                             if (_local) ...[

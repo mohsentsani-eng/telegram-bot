@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:taranom_hamdeli/screens/apex_dashboard.dart';
 import 'package:taranom_hamdeli/screens/apex_demo_screen.dart';
+import 'package:taranom_hamdeli/services/encrypted_backup.dart';
 
 const legacyKey = 'apex360_offline_v1';
 
@@ -75,6 +76,60 @@ void main() {
     };
     fixture = jsonEncode(legacyData);
     SharedPreferences.setMockInitialValues({legacyKey: fixture});
+  });
+
+  testWidgets('personal plan title fits the narrow navigation bar', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await openApp(tester);
+
+    final label = find.text('برنامه شخصی');
+    final bar = find.byType(NavigationBar);
+    expect(tester.getRect(bar).contains(tester.getRect(label).bottomCenter), isTrue);
+    await tester.tap(label);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('authenticated backup restores profile and reports after confirmation', (tester) async {
+    const password = 'synthetic-backup-password';
+    final previous = jsonEncode({...legacyData, 'studentName': 'پروفایل آزمایشی دیگر'});
+    SharedPreferences.setMockInitialValues({legacyKey: previous});
+    final payload = jsonEncode({...legacyData, 'format': 'apex360-backup-v1'});
+    final restored = await tester.runAsync(() async {
+      final bytes = await EncryptedBackup.encode(payload, password);
+      final envelope = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      expect(envelope['format'], 'apex360-encrypted-v1');
+      expect(utf8.decode(bytes), isNot(contains('studentName')));
+      await expectLater(EncryptedBackup.decode(bytes, 'incorrect-password'), throwsA(isA<Exception>()));
+      final cipher = base64Decode(envelope['cipher'] as String);
+      cipher[0] ^= 1;
+      envelope['cipher'] = base64Encode(cipher);
+      final tampered = utf8.encode(jsonEncode(envelope));
+      await expectLater(EncryptedBackup.decode(tampered, password), throwsA(isA<Exception>()));
+      return EncryptedBackup.decode(bytes, password);
+    });
+    expect(restored, payload);
+    await openApp(tester);
+    final dynamic screen = tester.state(find.byType(ApexDemoScreen));
+    final prefs = await SharedPreferences.getInstance();
+
+    final Future<void> canceled = screen.restoreBackup(suppliedRaw: restored);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('انصراف'));
+    await tester.pumpAndSettle();
+    await canceled;
+    expect(prefs.getString(legacyKey), previous);
+
+    final Future<void> confirmed = screen.restoreBackup(suppliedRaw: restored);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('بازیابی'));
+    await tester.pumpAndSettle();
+    await confirmed;
+    expect(jsonDecode(prefs.getString(legacyKey)!), legacyData);
+    expect(prefs.getString('${legacyKey}_before_restore'), previous);
   });
 
   testWidgets('v15-shaped data loads and switching theme leaves its bytes intact', (

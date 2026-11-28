@@ -287,7 +287,10 @@ class MobileAuthService {
     return synced;
   }
 
-  static const _botUsername = 'TaranomHamDeliBot';
+  static const _officialBotUsername = 'TaranomHamDeliBot';
+  static const _botUsername = String.fromEnvironment(
+    'APEX_TELEGRAM_BOT_USERNAME', defaultValue: _officialBotUsername,
+  );
 
   Future<void> openRegistration() async {
     final uri = Uri.https('t.me', '/$_botUsername', {'start': 'apex360'});
@@ -309,6 +312,7 @@ class MobileAuthService {
     if (data is! Map || data['api_version'] != 1 ||
         data['student_workflow_version'] != 17 ||
         data['authentication'] != 'telegram-deep-link-approval' ||
+        (data['telegram_bot_username'] ?? _officialBotUsername) != _botUsername ||
         data['counselor_assignment'] != true || data['plan_receipts'] != true ||
         data['report_feedback'] != true) {
       throw StateError('سامانه هنوز چرخهٔ دانش‌آموز و مشاور نسخهٔ ۱۷ را اعلام نکرده است.');

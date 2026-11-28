@@ -5,6 +5,8 @@ Student endpoints derive ownership from the authenticated session.
 """
 import hashlib
 import json
+import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -18,7 +20,9 @@ def _disable_caching(response: Response):
 
 
 router = APIRouter(prefix="/api/v1/mobile", tags=["mobile-app"], dependencies=[Depends(_disable_caching)])
-BOT_USERNAME = "TaranomHamDeliBot"
+BOT_USERNAME = os.getenv("APEX_TELEGRAM_BOT_USERNAME") or "TaranomHamDeliBot"
+if not re.fullmatch(r"[a-zA-Z0-9_]{2,29}[bB][oO][tT]", BOT_USERNAME):
+    raise ValueError("APEX_TELEGRAM_BOT_USERNAME must be a Telegram bot username")
 CHALLENGE_TTL_MINUTES = 5
 ACCESS_TTL_MINUTES = 15
 REFRESH_TTL_DAYS = 30
@@ -86,6 +90,7 @@ def mobile_capabilities():
         "plan_receipts": True,
         "report_feedback": True,
         "authentication": "telegram-deep-link-approval",
+        "telegram_bot_username": BOT_USERNAME,
         "offline": {
             "downloadable_study_plans": True,
             "downloadable_assessments": False,

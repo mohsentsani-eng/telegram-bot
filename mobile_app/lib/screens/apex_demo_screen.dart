@@ -1,12 +1,11 @@
 import 'dart:convert';
-import 'dart:math';
-import 'package:cryptography/cryptography.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shamsi_date/shamsi_date.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/encrypted_backup.dart';
 import '../theme/apex_offline_theme.dart';
 import 'apex_dashboard.dart';
 
@@ -501,17 +500,13 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
         FilledButton(onPressed: password.length < 12 || (creating && password != confirmation) ? null : () => Navigator.pop(ctx, password), child: const Text('ادامه'))])));
   }
-  Future<SecretKey> backupKey(String password, List<int> salt) => Pbkdf2(macAlgorithm: Hmac.sha256(), iterations: 600000, bits: 256).deriveKey(secretKey: SecretKey(utf8.encode(password)), nonce: salt);
   Future<void> encryptedBackup() async {
     final password = await backupPassword(true);
     if (password == null || !mounted) return;
     try {
-      final random = Random.secure();
-      final salt = List<int>.generate(16, (_) => random.nextInt(256));
-      final key = await backupKey(password, salt);
       final payload = jsonEncode({'format': 'apex360-backup-v1', 'tasks': tasks, 'reports': reports, 'studentName': studentName, 'studentGrade': studentGrade, 'studentTrack': studentTrack});
-      final box = await AesGcm.with256bits().encrypt(utf8.encode(payload), secretKey: key);
-      final bytes = Uint8List.fromList(utf8.encode(jsonEncode({'format': 'apex360-encrypted-v1', 'salt': base64Encode(salt), 'nonce': base64Encode(box.nonce), 'cipher': base64Encode(box.cipherText), 'mac': base64Encode(box.mac.bytes)})));
+      final bytes = await EncryptedBackup.encode(payload, password);
+      if (!mounted) return;
       final result = await FilePicker.platform.saveFile(dialogTitle: 'ذخیره پشتیبان رمزگذاری‌شده', fileName: 'apex360-$today.apexbackup', bytes: bytes);
       if (result != null && mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('پشتیبان ذخیره شد. رمز را در محل امن نگه دارید.')));
     } catch (_) {
@@ -524,17 +519,10 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
       if (result == null || !mounted) return;
       final bytes = result.files.single.bytes;
       if (bytes == null || bytes.length > 8000000) throw const FormatException();
-      final data = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-      if (data['format'] != 'apex360-encrypted-v1') throw const FormatException();
-      final salt = base64Decode(data['salt'] as String);
-      final nonce = base64Decode(data['nonce'] as String);
-      final mac = base64Decode(data['mac'] as String);
-      if (salt.length != 16 || nonce.length != 12 || mac.length != 16) throw const FormatException();
       final password = await backupPassword(false);
       if (password == null || !mounted) return;
-      final key = await backupKey(password, salt);
-      final plain = await AesGcm.with256bits().decrypt(SecretBox(base64Decode(data['cipher'] as String), nonce: nonce, mac: Mac(mac)), secretKey: key);
-      if (mounted) await restoreBackup(suppliedRaw: utf8.decode(plain));
+      final plain = await EncryptedBackup.decode(bytes, password);
+      if (mounted) await restoreBackup(suppliedRaw: plain);
     } catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('رمز نادرست یا فایل پشتیبان نامعتبر است.')));
     }
@@ -675,7 +663,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
             decoration: BoxDecoration(color: theme.colorScheme.secondaryContainer, borderRadius: BorderRadius.circular(14)),
             child: Text('برنامه و گزارش‌های شخصی روی همین گوشی ذخیره می‌شوند. برای ارسال گزارش به سامانه، از بخش گزارش‌ها در حساب دانش‌آموز استفاده کن.',
               style: TextStyle(color: theme.colorScheme.onSecondaryContainer, fontSize: 12, height: 1.8))),
-          const SizedBox(height: 12),
+          if (!profileComplete || tab == 4) const SizedBox(height: 8),
           if (!profileComplete) ...[heading('ابتدا پروفایل خود را تکمیل کنید'), account()],
           if (profileComplete && tab == 0) home(),
           if (profileComplete && tab == 1) plan(),
@@ -683,7 +671,11 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
           if (profileComplete && tab == 3) report(),
           if (profileComplete && tab == 4) account(),
         ])),
-      bottomNavigationBar: !ready || !profileComplete ? null : NavigationBar(height: 62, selectedIndex: tab,
+      bottomNavigationBar: !ready || !profileComplete ? null : NavigationBar(
+        height: 66,
+        labelPadding: EdgeInsets.zero,
+        labelTextStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 11, height: 1.1)),
+        selectedIndex: tab,
         onDestinationSelected: (v) => setState(() => tab = v),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home_outlined), label: 'خانه'),

@@ -114,7 +114,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
             ),
           ]),
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(13),
             decoration: BoxDecoration(
               gradient: AppColors.apexGradient,
               borderRadius: BorderRadius.circular(24),

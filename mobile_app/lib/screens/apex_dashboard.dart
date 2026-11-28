@@ -51,7 +51,7 @@ class ApexDashboard extends StatelessWidget {
             gradient: AppColors.apexGradient,
           ),
           child: Padding(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -186,10 +186,26 @@ Future<void> showAva(BuildContext context, {
             shrinkWrap: true,
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 22),
             children: [
-              Text('آوا، همراه مطالعه', style: Theme.of(sheet).textTheme.titleLarge),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: AppColors.apexGradient,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(children: [
+                  const AvaCompanion(celebrating: false),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('آوا، همراه مطالعه',
+                          style: TextStyle(color: AppColors.mint, fontWeight: FontWeight.bold)),
+                      Text(guidance, style: const TextStyle(color: Colors.white)),
+                    ],
+                  )),
+                ]),
+              ),
               const SizedBox(height: 6),
-              Text(guidance),
-              const SizedBox(height: 14),
               ListTile(
                 leading: const Icon(Icons.event_available_rounded),
                 title: const Text('کار بعدی رو انتخاب کن'),
@@ -321,13 +337,13 @@ class _ApexWeekChartState extends State<ApexWeekChart> {
     ];
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(widget.title, style: theme.textTheme.titleMedium),
-            Text('مجموع ۷ روز: $total ${widget.unit}'),
-            const SizedBox(height: 12),
+            Text('مجموع هفت روز · $total ${widget.unit}'),
+            const SizedBox(height: 6),
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -347,11 +363,11 @@ class _ApexWeekChartState extends State<ApexWeekChart> {
                             child: Column(
                               children: [
                                 SizedBox(
-                                  height: 74,
+                                  height: 62,
                                   child: Align(
                                     alignment: Alignment.bottomCenter,
                                     child: Container(
-                                      height: 4 + 70 * (day.value / maximum).clamp(0.0, 1.0).toDouble(),
+                                      height: 4 + 58 * (day.value / maximum).clamp(0.0, 1.0).toDouble(),
                                       width: 18,
                                       decoration: BoxDecoration(
                                         color: barColors[index % barColors.length].withValues(
@@ -377,7 +393,7 @@ class _ApexWeekChartState extends State<ApexWeekChart> {
               ],
             ),
             if (days.isNotEmpty)
-              Text('روز ${days[selected].label} • ${days[selected].value} ${widget.unit}',
+              Text('روز ${days[selected].label} · ${days[selected].value} ${widget.unit}',
                   style: theme.textTheme.labelLarge),
           ],
         ),
