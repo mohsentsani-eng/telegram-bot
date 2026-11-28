@@ -639,6 +639,74 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     );
   }
 
+  Widget offlineNavigation(ColorScheme colors) {
+    const destinations = [
+      (Icons.home_outlined, 'خانه'),
+      (Icons.calendar_month_outlined, 'برنامه شخصی'),
+      (Icons.bar_chart_outlined, 'پیشرفت'),
+      (Icons.edit_note_outlined, 'گزارش'),
+      (Icons.person_outline, 'حساب'),
+    ];
+    return Material(
+      key: const ValueKey('apex-offline-navigation'),
+      color: colors.surfaceContainerLow,
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 60,
+          child: Row(children: [
+            for (final (index, (icon, label)) in destinations.indexed)
+              Expanded(
+                child: Semantics(
+                  selected: index == tab,
+                  button: true,
+                  child: InkWell(
+                    onTap: () => setState(() => tab = index),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: index == tab ? colors.secondaryContainer : Colors.transparent,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                              child: Icon(icon, size: 21, color: index == tab
+                                  ? colors.onSecondaryContainer : colors.onSurfaceVariant),
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 17,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                label,
+                                maxLines: 1,
+                                style: TextStyle(
+                                  color: colors.onSurface,
+                                  fontSize: 11,
+                                  fontWeight: index == tab ? FontWeight.bold : FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ]),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final dark = isDark;
@@ -671,19 +739,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
           if (profileComplete && tab == 3) report(),
           if (profileComplete && tab == 4) account(),
         ])),
-      bottomNavigationBar: !ready || !profileComplete ? null : NavigationBar(
-        height: 66,
-        labelPadding: EdgeInsets.zero,
-        labelTextStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 11, height: 1.1)),
-        selectedIndex: tab,
-        onDestinationSelected: (v) => setState(() => tab = v),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), label: 'خانه'),
-          NavigationDestination(icon: Icon(Icons.calendar_month_outlined), label: 'برنامه شخصی'),
-          NavigationDestination(icon: Icon(Icons.bar_chart_outlined), label: 'پیشرفت'),
-          NavigationDestination(icon: Icon(Icons.edit_note_outlined), label: 'گزارش'),
-          NavigationDestination(icon: Icon(Icons.person_outline), label: 'حساب'),
-        ]),
+      bottomNavigationBar: !ready || !profileComplete ? null : offlineNavigation(theme.colorScheme),
     )));
   }
 }

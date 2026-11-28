@@ -86,8 +86,13 @@ void main() {
     await openApp(tester);
 
     final label = find.text('برنامه شخصی');
-    final bar = find.byType(NavigationBar);
-    expect(tester.getRect(bar).contains(tester.getRect(label).bottomCenter), isTrue);
+    final bar = find.byKey(const ValueKey('apex-offline-navigation'));
+    final labelBounds = tester.getRect(label);
+    final barBounds = tester.getRect(bar);
+    expect(labelBounds.left, greaterThanOrEqualTo(barBounds.left));
+    expect(labelBounds.right, lessThanOrEqualTo(barBounds.right));
+    expect(labelBounds.top, greaterThanOrEqualTo(barBounds.top));
+    expect(labelBounds.bottom, lessThanOrEqualTo(barBounds.bottom));
     await tester.tap(label);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
