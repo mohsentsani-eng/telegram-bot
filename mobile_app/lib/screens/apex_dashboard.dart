@@ -6,6 +6,7 @@ import 'package:shamsi_date/shamsi_date.dart';
 import '../services/study_momentum.dart';
 import '../theme/apex_components.dart';
 import '../theme/app_theme.dart';
+import '../theme/journey_art.dart';
 
 class ApexDashboard extends StatelessWidget {
   const ApexDashboard({
@@ -17,12 +18,15 @@ class ApexDashboard extends StatelessWidget {
     required this.onPlan,
     required this.onReport,
     required this.onToggleTask,
+    required this.onFocus,
+    required this.onMood,
+    required this.onProgress,
   });
 
   final String studentName, dateLabel;
   final List<Map<String, dynamic>> tasks;
   final StudyMomentum momentum;
-  final VoidCallback onPlan, onReport;
+  final VoidCallback onPlan, onReport, onFocus, onMood, onProgress;
   final void Function(Map<String, dynamic>, bool) onToggleTask;
 
   @override
@@ -38,13 +42,15 @@ class ApexDashboard extends StatelessWidget {
           guidance: allDone
               ? 'وقت یک استراحت کوتاهه.'
               : tasks.isEmpty
-                  ? 'یک مرور کوتاه برای شروع کافیه.'
-                  : 'از ${tasks.firstWhere((task) => task['done'] != true)['title']} شروع کن.',
+              ? 'یک مرور کوتاه برای شروع کافیه.'
+              : 'از ${tasks.firstWhere((task) => task['done'] != true)['title']} شروع کن.',
           celebrating: allDone || momentum.todayMinutes > 0,
           onPlan: onPlan,
           onReport: onReport,
+          onFocus: onFocus,
         ),
-        MissionBoard(momentum: momentum),
+        JourneyActions(onMood: onMood, onProgress: onProgress),
+        MissionBoard(momentum: momentum, onFocus: onFocus, onReport: onReport),
         ApexSection(
           'هدف‌های امروز',
           detail: tasks.isEmpty
@@ -71,6 +77,71 @@ class ApexDashboard extends StatelessWidget {
   }
 }
 
+class JourneyActions extends StatelessWidget {
+  const JourneyActions({
+    super.key,
+    required this.onMood,
+    required this.onProgress,
+  });
+  final VoidCallback onMood, onProgress;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final (index, (label, icon, bg, fg, action)) in [
+            (
+              'حال روزانه',
+              Icons.sentiment_satisfied_alt,
+              c.secondaryContainer,
+              c.onSecondaryContainer,
+              onMood,
+            ),
+            (
+              'پیشرفت من',
+              Icons.explore_outlined,
+              c.tertiaryContainer,
+              c.onTertiaryContainer,
+              onProgress,
+            ),
+          ].indexed) ...[
+            if (index > 0) const SizedBox(width: 8),
+            Expanded(
+              child: Material(
+                color: bg,
+                borderRadius: BorderRadius.circular(20),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: action,
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Column(
+                      children: [
+                        Icon(icon, color: fg, size: 25),
+                        const SizedBox(height: 4),
+                        Text(
+                          label,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(color: fg),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class AvaHero extends StatelessWidget {
   const AvaHero({
     super.key,
@@ -79,19 +150,142 @@ class AvaHero extends StatelessWidget {
     required this.celebrating,
     required this.onPlan,
     required this.onReport,
-    this.actionLabel = 'ثبت مطالعه',
+    required this.onFocus,
   });
-  final String title, guidance, actionLabel;
+  final String title, guidance;
   final bool celebrating;
-  final VoidCallback onPlan, onReport;
+  final VoidCallback onPlan, onReport, onFocus;
 
   @override
-  Widget build(BuildContext context) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.night,
-          borderRadius: BorderRadius.circular(28),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(32),
+      child: ColoredBox(
+        color: const Color(0xFF102443),
+        child: CustomPaint(
+          painter: const NightLandscape(),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            celebrating
+                                ? 'آوا · همراه قدم امروز'
+                                : 'آوا · همراه مسیر تو',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: const Color(0xFFC6DCFF),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            title,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            guidance,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      tooltip: 'از آوا کمک بگیر',
+                      onPressed: () => showAva(
+                        context,
+                        guidance: guidance,
+                        onPlan: onPlan,
+                        onReport: onReport,
+                      ),
+                      icon: AvaCompanion(celebrating: celebrating, size: 96),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFCDE0FF),
+                    foregroundColor: const Color(0xFF102443),
+                  ),
+                  onPressed: onFocus,
+                  icon: const Icon(Icons.timer_outlined),
+                  label: const Text('زمان‌سنج تمرکز'),
+                ),
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(48, 48),
+                  ),
+                  onPressed: onReport,
+                  icon: const Icon(Icons.edit_note),
+                  label: const Text('ثبت مطالعه'),
+                ),
+              ],
+            ),
+          ),
         ),
-        padding: const EdgeInsets.all(16),
+      ),
+    );
+  }
+}
+
+class MissionBoard extends StatelessWidget {
+  const MissionBoard({
+    super.key,
+    required this.momentum,
+    required this.onFocus,
+    required this.onReport,
+  });
+  final StudyMomentum momentum;
+  final VoidCallback onFocus, onReport;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final c = theme.colorScheme;
+    final steps = [
+      (
+        'قدم اول',
+        'یک فعالیت ثبت کن',
+        Icons.flag_rounded,
+        momentum.todayMinutes > 0 || momentum.todayTests > 0,
+        c.primaryContainer,
+        c.onPrimaryContainer,
+        onReport,
+      ),
+      (
+        'جزیرهٔ تمرکز',
+        '۲۵ دقیقه مطالعه',
+        Icons.timer_outlined,
+        momentum.todayMinutes >= 25,
+        c.secondaryContainer,
+        c.onSecondaryContainer,
+        onFocus,
+      ),
+      (
+        'قلهٔ تمرین',
+        'تمرین یا تست ثبت کن',
+        Icons.landscape_rounded,
+        momentum.todayTests > 0,
+        c.tertiaryContainer,
+        c.onTertiaryContainer,
+        onReport,
+      ),
+    ];
+    final count = steps.where((step) => step.$4).length;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -102,125 +296,70 @@ class AvaHero extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'آوا، همراه مطالعه',
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelLarge
-                            ?.copyWith(color: AppColors.mint),
+                        'نقشهٔ مأموریت‌های امروز',
+                        style: theme.textTheme.titleLarge,
                       ),
-                      Text(
-                        title,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(color: Colors.white),
-                      ),
-                      Text(guidance,
-                          style: const TextStyle(color: Colors.white)),
+                      Text('${fa(momentum.todayMinutes)} دقیقه مطالعه'),
+                      Text('${fa(momentum.todayTests)} تست'),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                AvaCompanion(celebrating: celebrating, size: 94),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.mint,
-                    foregroundColor: AppColors.night,
-                  ),
-                  onPressed: onReport,
-                  icon: const Icon(Icons.edit_note),
-                  label: Text(actionLabel),
-                ),
-                TextButton(
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.mint,
-                    minimumSize: const Size(48, 48),
-                  ),
-                  onPressed: () => showAva(
-                    context,
-                    guidance: guidance,
-                    onPlan: onPlan,
-                    onReport: onReport,
-                  ),
-                  child: const Text('از آوا کمک بگیر'),
+                ProgressRing(
+                  value: count / steps.length,
+                  label: '${fa(count)} از ۳',
                 ),
               ],
             ),
-          ],
-        ),
-      );
-}
-
-class MissionBoard extends StatelessWidget {
-  const MissionBoard({super.key, required this.momentum});
-  final StudyMomentum momentum;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final missions = [
-      ('یک قدم کوچک', momentum.todayMinutes > 0 || momentum.todayTests > 0),
-      ('۲۵ دقیقه تمرکز', momentum.todayMinutes >= 25),
-      ('تمرین بازیابی', momentum.todayTests > 0),
-    ];
-    final achieved = missions.where((mission) => mission.$2).length;
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
+            const SizedBox(height: 10),
+            CustomPaint(
+              painter: TrailPainter(
+                c.outline,
+                Directionality.of(context) == TextDirection.rtl,
+              ),
+              child: Column(
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'مأموریت‌های امروز',
-                          style: theme.textTheme.titleLarge,
+                  for (final (title, detail, icon, done, bg, fg, action)
+                      in steps)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Semantics(
+                        label: done ? '$title، انجام شد' : null,
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          onTap: action,
+                          leading: CircleAvatar(
+                            radius: 25,
+                            backgroundColor: bg,
+                            foregroundColor: fg,
+                            child: Icon(done ? Icons.check_rounded : icon),
+                          ),
+                          title: Text(
+                            title,
+                            style: theme.textTheme.titleMedium,
+                          ),
+                          subtitle: Text(detail),
+                          trailing: const Icon(Icons.chevron_left_rounded),
                         ),
-                        Text('${fa(momentum.todayMinutes)} دقیقه مطالعه'),
-                        Text('${fa(momentum.todayTests)} تست'),
-                      ],
+                      ),
                     ),
-                  ),
-                  ProgressRing(
-                    value: achieved / missions.length,
-                    label: '${fa(achieved)} از ۳',
-                  ),
                 ],
               ),
-              const SizedBox(height: 8),
-              for (final (label, done) in missions)
-                Row(
-                  children: [
-                    Icon(
-                      done ? Icons.check_circle_rounded : Icons.circle_outlined,
-                      size: 19,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(label)),
-                    if (done) const Text('انجام شد'),
-                  ],
+            ),
+            const Divider(height: 20),
+            if (count == steps.length)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  Icons.workspace_premium_rounded,
+                  color: c.primary,
                 ),
-              const Divider(height: 22),
-              Text(
-                '${fa(momentum.pointsToday)} امتیاز تلاش امروز',
-                style: theme.textTheme.labelLarge,
+                title: const Text('نشانِ مسیر کاملِ امروز'),
               ),
-            ],
-          ),
+            Text(
+              '${fa(momentum.pointsToday)} امتیاز تلاش امروز',
+              style: theme.textTheme.labelLarge,
+            ),
+          ],
         ),
       ),
     );
@@ -296,34 +435,64 @@ class StudyAchievements extends StatelessWidget {
                 'تا ${fa(jalali.day)}/${fa(jalali.month)}، ${fa(momentum.streak)} روز پیوسته',
               ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final (name, earned) in [
-                  ('اولین قدم', momentum.activeDays > 0),
-                  ('سه روز مطالعه', momentum.activeDays >= 3),
-                  ('سه روز پیوسته', momentum.bestStreak >= 3),
-                ])
-                  Chip(
-                    avatar: Icon(
-                      earned
-                          ? Icons.workspace_premium_rounded
-                          : Icons.flag_outlined,
-                      color:
-                          earned ? c.onTertiaryContainer : c.onSurfaceVariant,
+            const SizedBox(height: 6),
+            CustomPaint(
+              painter: TrailPainter(
+                c.outline,
+                Directionality.of(context) == TextDirection.rtl,
+              ),
+              child: Column(
+                children: [
+                  for (final (name, detail, earned) in [
+                    (
+                      'اولین قدم',
+                      'یک روز فعالیت ثبت‌شده',
+                      momentum.activeDays > 0,
                     ),
-                    backgroundColor: earned ? c.tertiaryContainer : c.surface,
-                    label: Text(
-                      name,
-                      semanticsLabel:
-                          '$name، ${earned ? "به دست آمد" : "هدف بعدی"}',
-                      style: TextStyle(
-                        color: earned ? c.onTertiaryContainer : c.onSurface,
+                    (
+                      'سه روز مطالعه',
+                      'فعالیت در سه روز متفاوت',
+                      momentum.activeDays >= 3,
+                    ),
+                    (
+                      'سه روز پیوسته',
+                      'فعالیت در سه روز پشت‌سرهم',
+                      momentum.bestStreak >= 3,
+                    ),
+                    (
+                      'کاشف مسیر',
+                      'فعالیت در هفت روز متفاوت',
+                      momentum.activeDays >= 7,
+                    ),
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: CircleAvatar(
+                          radius: 25,
+                          backgroundColor: earned
+                              ? c.tertiaryContainer
+                              : c.surfaceContainerHighest,
+                          foregroundColor: earned
+                              ? c.onTertiaryContainer
+                              : c.onSurface,
+                          child: Icon(
+                            earned
+                                ? Icons.workspace_premium_rounded
+                                : Icons.flag_outlined,
+                          ),
+                        ),
+                        title: Text(name),
+                        subtitle: Text(detail),
+                        trailing: Icon(
+                          earned ? Icons.check_rounded : Icons.more_horiz,
+                          semanticLabel: earned ? 'به دست آمد' : 'هدف بعدی',
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -337,85 +506,85 @@ Future<void> showAva(
   required String guidance,
   required VoidCallback onPlan,
   required VoidCallback onReport,
-}) =>
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (sheet) => SafeArea(
-        child: Directionality(
-          textDirection: TextDirection.rtl,
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 22),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.night,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: [
-                    const AvaCompanion(celebrating: false, focused: true),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'آوا، همراه مطالعه',
-                            style: TextStyle(
-                              color: AppColors.mint,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            guidance,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        ],
+}) => showModalBottomSheet<void>(
+  context: context,
+  showDragHandle: true,
+  isScrollControlled: true,
+  useSafeArea: true,
+  builder: (sheet) => SafeArea(
+    child: Directionality(
+      textDirection: TextDirection.rtl,
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 22),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.night,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              children: [
+                const AvaCompanion(celebrating: false, focused: true),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'آوا، همراه مطالعه',
+                        style: TextStyle(
+                          color: AppColors.mint,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 6),
-              ListTile(
-                leading: const Icon(Icons.event_available_rounded),
-                title: const Text('کار بعدی رو انتخاب کن'),
-                subtitle: const Text('یک درس بردار و با ۱۵ دقیقه شروع کن.'),
-                onTap: () {
-                  Navigator.pop(sheet);
-                  onPlan();
-                },
-              ),
-              const ExpansionTile(
-                leading: Icon(Icons.lightbulb_outline),
-                title: Text('روش مرور آوا'),
-                children: [
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: Text(
-                        'کتاب را ببند و سه نکته را از حافظه بگو. بعد پاسخ‌هایت را با کتاب بررسی کن.'),
+                      Text(
+                        guidance,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              ListTile(
-                leading: const Icon(Icons.edit_note_rounded),
-                title: const Text('نتیجه‌ات رو ثبت کن'),
-                subtitle: const Text('زمان مطالعه و تعداد تست‌هایی که زدی.'),
-                onTap: () {
-                  Navigator.pop(sheet);
-                  onReport();
-                },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          ListTile(
+            leading: const Icon(Icons.event_available_rounded),
+            title: const Text('کار بعدی رو انتخاب کن'),
+            subtitle: const Text('یک درس بردار و با ۱۵ دقیقه شروع کن.'),
+            onTap: () {
+              Navigator.pop(sheet);
+              onPlan();
+            },
+          ),
+          const ExpansionTile(
+            leading: Icon(Icons.lightbulb_outline),
+            title: Text('روش مرور آوا'),
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Text(
+                  'کتاب را ببند و سه نکته را از حافظه بگو. بعد پاسخ‌هایت را با کتاب بررسی کن.',
+                ),
               ),
             ],
           ),
-        ),
+          ListTile(
+            leading: const Icon(Icons.edit_note_rounded),
+            title: const Text('نتیجه‌ات رو ثبت کن'),
+            subtitle: const Text('زمان مطالعه و تعداد تست‌هایی که زدی.'),
+            onTap: () {
+              Navigator.pop(sheet);
+              onReport();
+            },
+          ),
+        ],
       ),
-    );
+    ),
+  ),
+);
 
 class AvaCompanion extends StatelessWidget {
   const AvaCompanion({
@@ -429,17 +598,21 @@ class AvaCompanion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
-        child: AnimatedSwitcher(
-          duration: MediaQuery.disableAnimationsOf(context)
-              ? Duration.zero
-              : const Duration(milliseconds: 180),
-          child: CustomPaint(
-            key: ValueKey((celebrating, focused)),
-            size: Size.square(size),
-            painter: _AvaPainter(celebrating, focused),
-          ),
-        ),
-      );
+    child: AnimatedSwitcher(
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 180),
+      transitionBuilder: (child, animation) => ScaleTransition(
+        scale: Tween<double>(begin: .93, end: 1).animate(animation),
+        child: FadeTransition(opacity: animation, child: child),
+      ),
+      child: CustomPaint(
+        key: ValueKey((celebrating, focused)),
+        size: Size.square(size),
+        painter: _AvaPainter(celebrating, focused),
+      ),
+    ),
+  );
 }
 
 class _AvaPainter extends CustomPainter {
@@ -450,7 +623,7 @@ class _AvaPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     canvas.scale(size.width / 100, size.height / 100);
     final orbit = Paint()
-      ..color = const Color(0xFF40616A)
+      ..color = focused ? const Color(0xFF86A9F8) : const Color(0xFF5D8297)
       ..strokeWidth = 1.4
       ..style = PaintingStyle.stroke;
     canvas.save();
@@ -481,7 +654,12 @@ class _AvaPainter extends CustomPainter {
       paint,
     );
     paint.color = const Color(0xFFFCC66E);
-    for (final (x, y) in [(21.0, 26.0), (78.0, 78.0), (54.0, 12.0)]) {
+    for (final (x, y) in [
+      (21.0, 26.0),
+      (78.0, 78.0),
+      (54.0, 12.0),
+      if (celebrating) ...[(14.0, 80.0), (84.0, 12.0), (65.0, 91.0)],
+    ]) {
       canvas.drawPath(
         Path()
           ..moveTo(x, y - 5)
@@ -589,12 +767,13 @@ class _ApexWeekChartState extends State<ApexWeekChart> {
                             child: Column(
                               children: [
                                 SizedBox(
-                                  height: 62,
+                                  height: 80,
                                   child: Align(
                                     alignment: Alignment.bottomCenter,
                                     child: Container(
-                                      height: 4 +
-                                          58 *
+                                      height:
+                                          4 +
+                                          76 *
                                               (day.value / maximum)
                                                   .clamp(0.0, 1.0)
                                                   .toDouble(),

@@ -4,6 +4,7 @@ import '../services/mobile_auth_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/apex_components.dart';
 import 'apex_dashboard.dart';
+import '../theme/journey_art.dart';
 import 'apex_demo_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -98,29 +99,38 @@ class _LoginScreenState extends State<LoginScreen> {
                 shrinkWrap: true,
                 padding: const EdgeInsets.all(20),
                 children: [
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 22),
-                    decoration: BoxDecoration(
+                  const ClipRRect(
+                    borderRadius: BorderRadius.all(Radius.circular(32)),
+                    child: ColoredBox(
                       color: AppColors.night,
-                      borderRadius: BorderRadius.circular(32),
-                    ),
-                    child: const Column(
-                      children: [
-                        AvaCompanion(celebrating: false, size: 132),
-                        Text(
-                          'Apex360',
-                          textDirection: TextDirection.ltr,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 36,
-                            fontWeight: FontWeight.w700,
+                      child: CustomPaint(
+                        painter: NightLandscape(),
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(20, 16, 20, 22),
+                          child: Column(
+                            children: [
+                              TaranomBrand(light: true),
+                              AvaCompanion(celebrating: false, size: 106),
+                              Text(
+                                'Apex360',
+                                textDirection: TextDirection.ltr,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                'با آوا وارد مسیر مطالعه شو',
+                                style: TextStyle(
+                                  color: AppColors.mint,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        Text(
-                          'آوا، همراه مطالعهٔ تو',
-                          style: TextStyle(color: AppColors.mint, fontSize: 16),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                   ApexSection(

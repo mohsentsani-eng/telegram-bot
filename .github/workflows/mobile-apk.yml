@@ -89,7 +89,7 @@ jobs:
         run: |
           AAPT="$(find "${ANDROID_HOME}/build-tools" -name aapt -type f | sort -V | tail -1)"
           metadata="$("$AAPT" dump badging build/app/outputs/flutter-apk/app-debug.apk)"
-          grep -F "package: name='ir.taranomhamdeli.taranom_hamdeli' versionCode='47' versionName='0.19.0'" <<< "$metadata"
+          grep -F "package: name='ir.taranomhamdeli.taranom_hamdeli' versionCode='48' versionName='0.20.0'" <<< "$metadata"
       - name: Verify APK signature
         working-directory: mobile_app
         env:

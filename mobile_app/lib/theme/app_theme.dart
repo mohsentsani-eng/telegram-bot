@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
 abstract final class AppColors {
-  static const primary = Color(0xFF006957);
+  static const primary = Color(0xFF245FB5);
   static const muted = Color(0xFF465A57);
   static const success = Color(0xFF18724C);
   static const mint = Color(0xFFBDF6E3);
-  static const night = Color(0xFF112C38);
+  static const night = Color(0xFF102443);
 }
 
 abstract final class AppTheme {
@@ -15,17 +15,20 @@ abstract final class AppTheme {
   static ThemeData build(Brightness brightness) {
     final dark = brightness == Brightness.dark;
     final violet = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF6549A7), brightness: brightness);
-    final scheme = ColorScheme.fromSeed(
-      seedColor: AppColors.primary,
+      seedColor: const Color(0xFF6549A7),
       brightness: brightness,
-      dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
-    ).copyWith(
-      secondaryContainer: violet.primaryContainer,
-      onSecondaryContainer: violet.onPrimaryContainer,
-      tertiaryContainer: Color(dark ? 0xFF523C16 : 0xFFFFE4A8),
-      onTertiaryContainer: Color(dark ? 0xFFFFE4A8 : 0xFF332305),
     );
+    final scheme =
+        ColorScheme.fromSeed(
+          seedColor: AppColors.primary,
+          brightness: brightness,
+          dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
+        ).copyWith(
+          secondaryContainer: violet.primaryContainer,
+          onSecondaryContainer: violet.onPrimaryContainer,
+          tertiaryContainer: Color(dark ? 0xFF523C16 : 0xFFFFE4A8),
+          onTertiaryContainer: Color(dark ? 0xFFFFE4A8 : 0xFF332305),
+        );
     return ThemeData(
       colorScheme: scheme,
       fontFamily: 'Vazirmatn',

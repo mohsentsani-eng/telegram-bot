@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/apex_components.dart';
+import '../theme/education_profile.dart';
 
 class StudyPlanScreen extends StatefulWidget {
   const StudyPlanScreen({super.key, this.active = true, this.onPersonal});
@@ -236,10 +237,14 @@ class DailyReportScreen extends StatefulWidget {
   const DailyReportScreen({
     super.key,
     this.active = true,
+    this.timerMinutes,
+    this.timerRevision = 0,
     this.onActivitiesChanged,
   });
 
   final bool active;
+  final int? timerMinutes;
+  final int timerRevision;
   final ValueChanged<List<Map<String, dynamic>>>? onActivitiesChanged;
   @override
   State<DailyReportScreen> createState() => _DailyReportScreenState();
@@ -277,6 +282,10 @@ class _DailyReportScreenState extends State<DailyReportScreen>
   void didUpdateWidget(covariant DailyReportScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.active && !oldWidget.active) unawaited(_loadFeedback());
+    if (widget.timerRevision != oldWidget.timerRevision &&
+        widget.timerMinutes != null) {
+      _minutes.text = widget.timerMinutes.toString();
+    }
   }
 
   Future<void> _loadFeedback() async {
@@ -629,64 +638,6 @@ class _DailyReportScreenState extends State<DailyReportScreen>
       );
 }
 
-class WellbeingScreen extends StatefulWidget {
-  const WellbeingScreen({super.key});
-  @override
-  State<WellbeingScreen> createState() => _WellbeingScreenState();
-}
-
-class _WellbeingScreenState extends State<WellbeingScreen> {
-  int mood = 3;
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('حال خوب من')),
-    body: ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        const Text(
-          'اینجا می‌تونی بدون قضاوت از حال امروزت بگی.',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 18),
-        const _OfflineNotice(),
-        const SizedBox(height: 22),
-        const Text(
-          'امروز چه حسی داری؟',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          children: List.generate(
-            4,
-            (i) => ChoiceChip(
-              label: Text(['😔 گرفته', '😕 معمولی', '🙂 خوب', '😄 شاد'][i]),
-              selected: mood == i + 1,
-              onSelected: (_) => setState(() => mood = i + 1),
-            ),
-          ),
-        ),
-        const SizedBox(height: 22),
-        const Text(
-          'این بخش برای شناخت بهتر حال روزانه توست و ابزار تشخیص پزشکی یا روان‌شناختی نیست. اگر نیاز به همراهی داری، می‌تونی با مشاورت ارتباط بگیری.',
-          style: TextStyle(fontSize: 12, height: 1.9),
-        ),
-        const SizedBox(height: 18),
-        FilledButton(
-          onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'این فرم نمایشی است؛ ذخیره امن در مرحله بعد فعال می‌شود.',
-              ),
-            ),
-          ),
-          child: const Text('ثبت حال امروز'),
-        ),
-      ],
-    ),
-  );
-}
-
 class _SimpleStudentPage extends StatelessWidget {
   const _SimpleStudentPage({
     required this.title,
@@ -867,7 +818,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
             ),
             const SizedBox(height: 14),
             _profileItem('پایه تحصیلی', value('grade')),
-            _profileItem('رشته تحصیلی', value('track')),
+            if (!isNinthGrade(value('grade')))
+              _profileItem('رشته تحصیلی', value('track')),
             _profileItem('شهر', value('city')),
             const SizedBox(height: 18),
             const Text(

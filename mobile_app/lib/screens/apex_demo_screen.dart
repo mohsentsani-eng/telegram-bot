@@ -11,6 +11,10 @@ import '../theme/app_theme.dart';
 import '../theme/apex_components.dart';
 import '../services/study_momentum.dart';
 import 'apex_dashboard.dart';
+import 'focus_screen.dart';
+import 'wellbeing_screen.dart';
+import '../theme/journey_art.dart';
+import '../theme/education_profile.dart';
 
 /// Offline-only workspace; does not contact the production bot or API.
 class ApexDemoScreen extends StatefulWidget {
@@ -280,12 +284,59 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         tab = 3;
       });
 
+  Future<void> openFocus() async {
+    if (editingReportIndex != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'برای انتقال زمان، ابتدا ویرایش گزارش قبلی را تمام کن.',
+          ),
+        ),
+      );
+      setState(() => tab = 3);
+      return;
+    }
+    final duration = await Navigator.of(context).push(
+      MaterialPageRoute<int>(
+        builder: (_) => Theme(
+          data: offlineTheme,
+          child: const Directionality(
+            textDirection: TextDirection.rtl,
+            child: FocusScreen(scope: 'personal'),
+          ),
+        ),
+      ),
+    );
+    if (!mounted || duration == null) return;
+    setState(() {
+      minutes = duration;
+      reportFormVersion++;
+      tab = 3;
+    });
+    if (reportScroll.hasClients) reportScroll.jumpTo(0);
+  }
+
+  void openMood() => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => Theme(
+            data: offlineTheme,
+            child: const Directionality(
+              textDirection: TextDirection.rtl,
+              child: WellbeingScreen(scope: 'personal'),
+            ),
+          ),
+        ),
+      );
+
   Widget home() => ApexDashboard(
         studentName: studentName,
         dateLabel: persianDate(today),
         tasks: tasks.where((task) => task['date'] == today).toList(),
         momentum: momentum,
         onPlan: openTodayPlan,
+        onFocus: openFocus,
+        onMood: openMood,
+        onProgress: () => setState(() => tab = 2),
         onReport: () => setState(() => tab = 3),
         onToggleTask: (task, value) async {
           setState(() => task['done'] = value);
@@ -520,84 +571,90 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     ];
     final colors = offlineTheme.colorScheme;
     return LayoutBuilder(
-        builder: (context, constraints) => SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-                width: constraints.maxWidth < 336 ? 336 : constraints.maxWidth,
-                child: Row(
-                  children: [
-                    for (final (index, name) in weekdays.indexed)
-                      Expanded(
-                        child: Builder(
-                          builder: (context) {
-                            final day = DateTime(
-                              now.year,
-                              now.month,
-                              now.day - (now.weekday + 1) % 7 + index,
-                            );
-                            final key = day.toIso8601String().substring(0, 10);
-                            final selected = filterDay == key;
-                            final entries =
-                                tasks.where((task) => task['date'] == key);
-                            final done = entries
-                                .where((task) => task['done'] == true)
-                                .length;
-                            return Semantics(
-                              button: true,
-                              selected: selected,
-                              onTap: () => setState(() => filterDay = key),
-                              label:
-                                  '$name ${persianDate(key)}، ${fa(done)} از ${fa(entries.length)} تکلیف انجام شد',
-                              child: Material(
-                                color: selected
-                                    ? colors.primaryContainer
-                                    : colors.surface,
-                                borderRadius: BorderRadius.circular(16),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(16),
-                                  onTap: () => setState(() => filterDay = key),
-                                  child: ExcludeSemantics(
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 8,
-                                        horizontal: 2,
-                                      ),
-                                      child: Column(
-                                        children: [
-                                          Text([
-                                            'ش',
-                                            'ی',
-                                            'د',
-                                            'س',
-                                            'چ',
-                                            'پ',
-                                            'ج'
-                                          ][index]),
-                                          FittedBox(
-                                            child: Text(fa(
-                                                Jalali.fromDateTime(day).day)),
-                                          ),
-                                          Icon(
-                                            entries.isEmpty
-                                                ? Icons.remove
-                                                : done == entries.length
-                                                    ? Icons.check_circle
-                                                    : Icons.circle,
-                                            size: 13,
-                                            color: colors.primary,
-                                          ),
-                                        ],
+      builder: (context, constraints) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: constraints.maxWidth < 336 ? 336 : constraints.maxWidth,
+          child: Row(
+            children: [
+              for (final (index, name) in weekdays.indexed)
+                Expanded(
+                  child: Builder(
+                    builder: (context) {
+                      final day = DateTime(
+                        now.year,
+                        now.month,
+                        now.day - (now.weekday + 1) % 7 + index,
+                      );
+                      final key = day.toIso8601String().substring(0, 10);
+                      final selected = filterDay == key;
+                      final entries = tasks.where(
+                        (task) => task['date'] == key,
+                      );
+                      final done =
+                          entries.where((task) => task['done'] == true).length;
+                      return Semantics(
+                        button: true,
+                        selected: selected,
+                        onTap: () => setState(() => filterDay = key),
+                        label:
+                            '$name ${persianDate(key)}، ${fa(done)} از ${fa(entries.length)} تکلیف انجام شد',
+                        child: Material(
+                          color: selected
+                              ? colors.primaryContainer
+                              : colors.surface,
+                          borderRadius: BorderRadius.circular(16),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () => setState(() => filterDay = key),
+                            child: ExcludeSemantics(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                  horizontal: 2,
+                                ),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      [
+                                        'ش',
+                                        'ی',
+                                        'د',
+                                        'س',
+                                        'چ',
+                                        'پ',
+                                        'ج',
+                                      ][index],
+                                    ),
+                                    FittedBox(
+                                      child: Text(
+                                        fa(Jalali.fromDateTime(day).day),
                                       ),
                                     ),
-                                  ),
+                                    Icon(
+                                      entries.isEmpty
+                                          ? Icons.remove
+                                          : done == entries.length
+                                              ? Icons.check_circle
+                                              : Icons.circle,
+                                      size: 13,
+                                      color: colors.primary,
+                                    ),
+                                  ],
                                 ),
                               ),
-                            );
-                          },
+                            ),
+                          ),
                         ),
-                      ),
-                  ],
-                ))));
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget planComposer() => Card(
@@ -1587,10 +1644,8 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
     'سایر',
   ];
   String normalizedGrade(String value) {
-    var v = value.trim();
-    for (var i = 0; i < 10; i++) {
-      v = v.replaceAll('۰۱۲۳۴۵۶۷۸۹'[i], '$i');
-    }
+    if (isNinthGrade(value)) return 'نهم';
+    final v = latinDigits(value).trim();
     final n = int.tryParse(v);
     return n != null && n >= 1 && n <= 12 ? grades[n - 1] : v;
   }
@@ -1614,8 +1669,8 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
               subtitle: Text(
                 profileComplete
                     ? [
-                        studentGrade,
-                        studentTrack,
+                        normalizedGrade(studentGrade),
+                        if (!isNinthGrade(studentGrade)) studentTrack,
                       ].where((value) => value.isNotEmpty).join(' · ')
                     : 'مشخصات محلی این گوشی',
               ),
@@ -1681,10 +1736,13 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
                     }
                     setState(() {
                       studentName = nameController.text.trim();
-                      studentGrade = normalizedGrade(gradeController.text);
-                      studentTrack = grades.skip(9).contains(studentGrade)
-                          ? trackController.text.trim()
-                          : '';
+                      final nextGrade = normalizedGrade(gradeController.text);
+                      if (grades.skip(9).contains(nextGrade)) {
+                        studentTrack = trackController.text.trim();
+                      } else if (nextGrade != normalizedGrade(studentGrade)) {
+                        studentTrack = '';
+                      }
+                      studentGrade = nextGrade;
                       tab = 0;
                     });
                     await save();
@@ -1863,7 +1921,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
         textDirection: TextDirection.rtl,
         child: Scaffold(
           appBar: AppBar(
-            title: const Text('Apex360', textDirection: TextDirection.ltr),
+            title: const TaranomBrand(),
             actions: [
               IconButton(
                 tooltip: dark ? 'حالت روز' : 'حالت شب',
@@ -1904,7 +1962,7 @@ class _ApexDemoScreenState extends State<ApexDemoScreen> {
                         controller: switch (tab) {
                           1 => planScroll,
                           3 => reportScroll,
-                          _ => null
+                          _ => null,
                         },
                         padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
                         children: [
