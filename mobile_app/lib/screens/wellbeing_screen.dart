@@ -16,23 +16,27 @@ class _WellbeingScreenState extends State<WellbeingScreen> {
   static const _storage = FlutterSecureStorage();
   static const _moods = [
     (
-      '😔',
+      Icons.sentiment_dissatisfied_rounded,
       'دل‌گرفته',
       'امروز می‌توانی از خودت انتظار کمتری داشته باشی. یک مکث کوتاه هم خوب است.',
     ),
     (
-      '😣',
+      Icons.sentiment_very_dissatisfied_rounded,
       'پرفشار',
       'چند نفس آرام بکش. اگر خواستی از کسی که به او اعتماد داری کمک بگیر.',
     ),
     (
-      '😐',
+      Icons.sentiment_neutral_rounded,
       'معمولی',
       'برای شروع، کاری را انتخاب کن که همین حالا از دستت برمی‌آید.',
     ),
-    ('🙂', 'آرام', 'اگر دوست داری، این آرامش را با یک مرور کوتاه همراه کن.'),
     (
-      '😄',
+      Icons.sentiment_satisfied_alt_rounded,
+      'آرام',
+      'اگر دوست داری، این آرامش را با یک مرور کوتاه همراه کن.'
+    ),
+    (
+      Icons.sentiment_very_satisfied_rounded,
       'پرانرژی',
       'می‌توانی انرژی‌ات را برای کاری بگذاری که دوست داری جلو برود.',
     ),
@@ -122,14 +126,13 @@ class _WellbeingScreenState extends State<WellbeingScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final (index, (emoji, label, _)) in _moods.indexed)
+                for (final (index, (face, label, _)) in _moods.indexed)
                   Semantics(
                     label: label,
                     selected: _selected == index,
                     button: true,
-                    onTap: _busy
-                        ? null
-                        : () => setState(() => _selected = index),
+                    onTap:
+                        _busy ? null : () => setState(() => _selected = index),
                     child: ExcludeSemantics(
                       child: Material(
                         color: _selected == index
@@ -156,10 +159,13 @@ class _WellbeingScreenState extends State<WellbeingScreen> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
-                                  emoji,
-                                  style: const TextStyle(fontSize: 32),
+                                CircleAvatar(
+                                  radius: 19,
+                                  backgroundColor: const Color(0xFFFFD875),
+                                  foregroundColor: const Color(0xFF533512),
+                                  child: Icon(face, size: 30),
                                 ),
+                                const SizedBox(height: 3),
                                 Text(label, style: theme.textTheme.labelLarge),
                                 Icon(
                                   _selected == index
@@ -187,9 +193,8 @@ class _WellbeingScreenState extends State<WellbeingScreen> {
                 ),
               ),
             FilledButton.icon(
-              onPressed: _busy || _selected == null
-                  ? null
-                  : () => _save(_selected),
+              onPressed:
+                  _busy || _selected == null ? null : () => _save(_selected),
               icon: const Icon(Icons.check_rounded),
               label: Text(
                 _saved != null && _saved == _selected
