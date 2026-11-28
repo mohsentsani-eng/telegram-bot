@@ -2,11 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../services/mobile_auth_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/apex_components.dart';
 import 'apex_dashboard.dart';
 import 'apex_demo_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.onAuthenticated});
+  const LoginScreen({
+    super.key,
+    required this.onAuthenticated,
+    this.onThemeChanged,
+  });
+  final ValueChanged<bool>? onThemeChanged;
 
   final VoidCallback onAuthenticated;
 
@@ -38,25 +44,29 @@ class _LoginScreenState extends State<LoginScreen> {
       if (_local) {
         await _auth.loginLocally(_code.text.trim());
       } else {
-        await _auth.loginWithTelegram(onStatus: (message) {
-          if (mounted) setState(() => _status = message);
-        });
+        await _auth.loginWithTelegram(
+          onStatus: (message) {
+            if (mounted) setState(() => _status = message);
+          },
+        );
       }
       if (mounted) widget.onAuthenticated();
     } catch (error) {
-      if (mounted) setState(() {
-        _error = switch (error) {
-          StateError(:final message) => message,
-          _ when error.toString().startsWith('Exception: ') =>
-            error.toString().substring('Exception: '.length),
-          _ => 'برقراری ارتباط ممکن نشد. اتصال را بررسی کن.',
-        };
-      });
+      if (mounted)
+        setState(() {
+          _error = switch (error) {
+            StateError(:final message) => message,
+            _ when error.toString().startsWith('Exception: ') =>
+              error.toString().substring('Exception: '.length),
+            _ => 'برقراری ارتباط ممکن نشد. اتصال را بررسی کن.',
+          };
+        });
     } finally {
-      if (mounted) setState(() {
-        _busy = false;
-        _status = null;
-      });
+      if (mounted)
+        setState(() {
+          _busy = false;
+          _status = null;
+        });
     }
   }
 
@@ -82,97 +92,97 @@ class _LoginScreenState extends State<LoginScreen> {
       child: Scaffold(
         body: SafeArea(
           child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        gradient: AppColors.apexGradient,
-                        borderRadius: BorderRadius.circular(28),
-                      ),
-                      child: const Row(children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Apex360',
-                                  style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900)),
-                              Text('همراه مطالعهٔ ترنم همدلی',
-                                  style: TextStyle(color: AppColors.mint, height: 1.7)),
-                            ],
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.all(20),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 22),
+                    decoration: BoxDecoration(
+                      color: AppColors.night,
+                      borderRadius: BorderRadius.circular(32),
+                    ),
+                    child: const Column(
+                      children: [
+                        AvaCompanion(celebrating: false, size: 132),
+                        Text(
+                          'Apex360',
+                          textDirection: TextDirection.ltr,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 36,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                        SizedBox(width: 12),
-                        AvaCompanion(celebrating: false),
-                      ]),
+                        Text(
+                          'آوا، همراه مطالعهٔ تو',
+                          style: TextStyle(color: AppColors.mint, fontSize: 16),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 14),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(_local ? 'ورود آزمایشی همایش' : 'ورود دانش‌آموز به سامانهٔ ترنم همدلی',
-                                style: theme.textTheme.titleLarge),
-                            const SizedBox(height: 4),
-                            Text(_local
-                                ? 'این نسخه به سرور محلی نمایش وصل می‌شود. کد حساب ساختگی را وارد کن.'
-                                : 'با همان حساب تلگرامی وارد شو که با آن ثبت‌نام کردی.'),
-                            const SizedBox(height: 14),
-                            if (_local) ...[
-                              TextField(
-                                controller: _code,
-                                obscureText: true,
-                                autocorrect: false,
-                                enabled: !_busy,
-                                textInputAction: TextInputAction.go,
-                                onSubmitted: (_) => _login(),
-                                decoration: const InputDecoration(labelText: 'کد ورود آزمایشی'),
-                              ),
-                              const SizedBox(height: 10),
-                            ],
-                            if (_status != null) Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Semantics(liveRegion: true, child: Text(_status!)),
-                            ),
-                            if (_error != null) Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Semantics(
-                                liveRegion: true,
-                                child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
-                              ),
-                            ),
-                            FilledButton.icon(
-                              onPressed: _busy ? null : _login,
-                              icon: const Icon(Icons.lock_open_rounded),
-                              label: Text(_busy ? 'در حال ورود…' : (_local ? 'ورود آزمایشی' : 'ورود با تلگرام')),
-                            ),
-                            if (!_local)
-                              TextButton.icon(
-                                onPressed: _busy ? null : _register,
-                                icon: const Icon(Icons.person_add_alt_rounded),
-                                label: const Text('ثبت‌نام در ربات ترنم همدلی'),
-                              ),
-                          ],
+                  ),
+                  ApexSection(
+                    _local ? 'ورود آزمایشی همایش' : 'ورود به حساب دانش‌آموز',
+                    detail: _local ? 'کد حساب ساختگی را وارد کن.' : 'ورود از طریق همان حساب تلگرام که با آن ثبت‌نام کردی.',
+                  ),
+                  if (_local)
+                    TextField(
+                      controller: _code,
+                      obscureText: true,
+                      autocorrect: false,
+                      enabled: !_busy,
+                      textInputAction: TextInputAction.go,
+                      onSubmitted: (_) => _login(),
+                      decoration: const InputDecoration(
+                        labelText: 'کد ورود آزمایشی',
+                      ),
+                    ),
+                  if (_status != null) ...[
+                    const LinearProgressIndicator(),
+                    Semantics(liveRegion: true, child: Text(_status!)),
+                  ],
+                  if (_error != null)
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        _error!,
+                        style: TextStyle(color: theme.colorScheme.error),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
+                    onPressed: _busy ? null : _login,
+                    icon: const Icon(Icons.lock_outline),
+                    label: Text(
+                      _busy
+                          ? 'در حال ورود…'
+                          : (_local ? 'ورود آزمایشی' : 'ورود با تلگرام'),
+                    ),
+                  ),
+                  if (!_local)
+                    TextButton(
+                      onPressed: _busy ? null : _register,
+                      child: const Text('ثبت‌نام در ربات ترنم همدلی'),
+                    ),
+                  const SizedBox(height: 8),
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.phone_android_rounded),
+                      title: const Text('باز کردن داشبورد آفلاین'),
+                      subtitle: const Text('برنامه و گزارش شخصی روی همین گوشی'),
+                      trailing: const Icon(Icons.chevron_left),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ApexDemoScreen(
+                            onThemeChanged: widget.onThemeChanged,
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    TextButton.icon(
-                      onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                        builder: (_) => const ApexDemoScreen(),
-                      )),
-                      icon: const Icon(Icons.phone_android_rounded),
-                      label: const Text('باز کردن داشبورد آفلاین'),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),

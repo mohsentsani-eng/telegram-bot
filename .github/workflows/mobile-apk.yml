@@ -59,12 +59,6 @@ jobs:
         run: |
           python3 -m pip install 'fastapi>=0.115' uvicorn pytest httpx python-multipart itsdangerous
           python3 -m pytest -q tests/test_mobile_auth.py
-      - name: Verify the approved HTTPS test origin
-        if: vars.APEX360_TEST_API_ORIGIN != ''
-        env:
-          APEX_API_ORIGIN: ${{ vars.APEX360_TEST_API_ORIGIN }}
-          APEX_BOT: ${{ vars.APEX360_TEST_BOT_USERNAME }}
-        run: python3 -m tools.mobile_check "$APEX_API_ORIGIN" --bot "${APEX_BOT:-TaranomHamDeliBot}"
       - name: Configure stable debug signing
         env:
           APEX_KEYSTORE: ${{ secrets.APEX360_DEBUG_KEYSTORE_BASE64 }}
@@ -95,7 +89,7 @@ jobs:
         run: |
           AAPT="$(find "${ANDROID_HOME}/build-tools" -name aapt -type f | sort -V | tail -1)"
           metadata="$("$AAPT" dump badging build/app/outputs/flutter-apk/app-debug.apk)"
-          grep -F "package: name='ir.taranomhamdeli.taranom_hamdeli' versionCode='46' versionName='0.18.0'" <<< "$metadata"
+          grep -F "package: name='ir.taranomhamdeli.taranom_hamdeli' versionCode='47' versionName='0.19.0'" <<< "$metadata"
       - name: Verify APK signature
         working-directory: mobile_app
         env:

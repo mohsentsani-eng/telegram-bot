@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+
 import 'screens/login_screen.dart';
 import 'screens/apex_demo_screen.dart';
 import 'screens/student_home_screen.dart';
@@ -20,53 +23,83 @@ class TaranomApp extends StatefulWidget {
 
 class _TaranomAppState extends State<TaranomApp> {
   final _package = PackageInfo.fromPlatform();
+  ThemeMode _mode = ThemeMode.system;
+
+  @override
+  void initState() {
+    super.initState();
+    SharedPreferences.getInstance().then((prefs) {
+      final saved = prefs.get('apex360_dark_mode');
+      if (mounted && saved is bool && _mode == ThemeMode.system) {
+        setState(() => _mode = saved ? ThemeMode.dark : ThemeMode.light);
+      }
+    });
+  }
+
+  void _setDark(bool dark) {
+    setState(() => _mode = dark ? ThemeMode.dark : ThemeMode.light);
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setBool('apex360_dark_mode', dark),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ترنم همدلی',
+      title: 'Apex360',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: _mode,
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      supportedLocales: const [Locale('fa')],
       locale: const Locale('fa'),
       builder: (context, navigator) => FutureBuilder<PackageInfo>(
         future: _package,
         builder: (context, snapshot) {
           final info = snapshot.data;
-          final showVersion = info != null && info.version.isNotEmpty && info.buildNumber.isNotEmpty;
+          final showVersion =
+              info != null &&
+              info.version.isNotEmpty &&
+              info.buildNumber.isNotEmpty;
           final theme = Theme.of(context);
           return Column(
             children: [
-              Expanded(child: MediaQuery.removePadding(
-                context: context,
-                removeBottom: showVersion,
-                child: navigator!,
-              )),
-              if (showVersion) Material(
-                color: theme.colorScheme.surface,
-                child: SafeArea(
-                  top: false,
-                  child: Center(
-                    child: Text(
-                      'Apex360 · ${info.version}+${info.buildNumber}',
-                      textDirection: TextDirection.ltr,
-                      style: theme.textTheme.labelSmall,
+              Expanded(
+                child: MediaQuery.removePadding(
+                  context: context,
+                  removeBottom: showVersion,
+                  child: navigator!,
+                ),
+              ),
+              if (showVersion)
+                Material(
+                  color: theme.colorScheme.surface,
+                  child: SafeArea(
+                    top: false,
+                    child: Center(
+                      child: Text(
+                        'Apex360 · ${info.version}+${info.buildNumber}',
+                        textDirection: TextDirection.ltr,
+                        style: theme.textTheme.labelSmall,
+                      ),
                     ),
                   ),
                 ),
-              ),
             ],
           );
         },
       ),
       home: const bool.fromEnvironment('APEX_DEMO_MODE', defaultValue: false)
-          ? const ApexDemoScreen()
-          : const _AuthenticationGate(),
+          ? ApexDemoScreen(onThemeChanged: _setDark)
+          : _AuthenticationGate(onThemeChanged: _setDark),
     );
   }
 }
 
 class _AuthenticationGate extends StatefulWidget {
-  const _AuthenticationGate();
+  const _AuthenticationGate({required this.onThemeChanged});
+  final ValueChanged<bool> onThemeChanged;
 
   @override
   State<_AuthenticationGate> createState() => _AuthenticationGateState();
@@ -100,8 +133,14 @@ class _AuthenticationGateState extends State<_AuthenticationGate> {
       );
     }
     if (!_authenticated!) {
-      return LoginScreen(onAuthenticated: _onAuthenticated);
+      return LoginScreen(
+        onAuthenticated: _onAuthenticated,
+        onThemeChanged: widget.onThemeChanged,
+      );
     }
-    return StudentHomeScreen(onLoggedOut: _onLoggedOut);
+    return StudentHomeScreen(
+      onLoggedOut: _onLoggedOut,
+      onThemeChanged: widget.onThemeChanged,
+    );
   }
 }

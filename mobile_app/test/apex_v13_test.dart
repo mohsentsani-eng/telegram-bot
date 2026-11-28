@@ -98,6 +98,22 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('key screens fit a small viewport with enlarged text', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await openApp(tester);
+
+    for (final label in ['برنامه شخصی', 'گزارش', 'پیشرفت', 'حساب', 'خانه']) {
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: label);
+    }
+  });
+
   testWidgets('authenticated backup restores profile and reports after confirmation', (tester) async {
     const password = 'synthetic-backup-password';
     final previous = jsonEncode({...legacyData, 'studentName': 'پروفایل آزمایشی دیگر'});
@@ -142,8 +158,8 @@ void main() {
   ) async {
     await openApp(tester);
     expect(find.text('سلام، دانش‌آموز آزمایشی'), findsOneWidget);
-    expect(find.text('270 دقیقه مطالعه'), findsOneWidget);
-    expect(find.text('156 تست'), findsOneWidget);
+    expect(find.text('۲۷۰ دقیقه مطالعه'), findsOneWidget);
+    expect(find.text('۱۵۶ تست'), findsOneWidget);
     expect(
       Theme.of(tester.element(find.byType(ApexDashboard))).brightness,
       Brightness.light,

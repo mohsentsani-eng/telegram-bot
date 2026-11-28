@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:shamsi_date/shamsi_date.dart';
+
 import '../services/mobile_auth_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/apex_components.dart';
+import '../services/study_momentum.dart';
 import 'student_sections.dart';
 import 'apex_demo_screen.dart';
 import 'apex_dashboard.dart';
 
 class StudentHomeScreen extends StatefulWidget {
-  const StudentHomeScreen({super.key, required this.onLoggedOut});
+  const StudentHomeScreen({
+    super.key,
+    required this.onLoggedOut,
+    this.onThemeChanged,
+  });
+  final ValueChanged<bool>? onThemeChanged;
   final VoidCallback onLoggedOut;
 
   @override
@@ -27,183 +34,218 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       if (mounted) widget.onLoggedOut();
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('خروج امن کامل نشد. اتصال اینترنت را بررسی و دوباره تلاش کنید.'),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'خروج امن کامل نشد. اتصال اینترنت را بررسی و دوباره تلاش کنید.',
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _loggingOut = false);
     }
   }
 
-
   void _goToTab(int index) => setState(() => _selectedIndex = index);
 
   void _openWellbeing() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const WellbeingScreen()),
-    );
+    Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => const WellbeingScreen()));
   }
 
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
       _homePage(),
-      StudyPlanScreen(active: _selectedIndex == 1),
+      StudyPlanScreen(active: _selectedIndex == 1, onPersonal: _openPersonal),
       const TestsScreen(),
       DailyReportScreen(
         active: _selectedIndex == 3,
-        onActivitiesChanged: (activities) => setState(() => _activities = activities),
+        onActivitiesChanged: (activities) =>
+            setState(() => _activities = activities),
       ),
-      const StudentProfileScreen(),
+      StudentProfileScreen(
+        onLoggedOut: _loggingOut ? null : _logout,
+        onThemeChanged: widget.onThemeChanged,
+      ),
     ];
 
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        body: IndexedStack(
-          index: _selectedIndex,
-          children: pages,
-        ),
+        body: IndexedStack(index: _selectedIndex, children: pages),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _selectedIndex,
           onDestinationSelected: _goToTab,
           destinations: const [
-            NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'خانه'),
-            NavigationDestination(icon: Icon(Icons.calendar_month_outlined), label: 'برنامه مشاور'),
-            NavigationDestination(icon: Icon(Icons.quiz_outlined), label: 'آزمون‌ها'),
-            NavigationDestination(icon: Icon(Icons.insights_outlined), label: 'گزارش‌ها'),
-            NavigationDestination(icon: Icon(Icons.person_outline), label: 'حساب من'),
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
+              label: 'خانه',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.calendar_month_outlined),
+              label: 'برنامه',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.quiz_outlined),
+              label: 'آزمون‌ها',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.insights_outlined),
+              label: 'گزارش',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              label: 'حساب من',
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _homePage() {
-    final theme = Theme.of(context);
-    final today = DateTime.now();
-    final minutesByDay = <DateTime, int>{};
-    var todayTests = 0;
-    for (final activity in _activities) {
-      final date = DateTime.tryParse(activity['created_at'] as String? ?? '')?.toLocal();
-      if (date == null) continue;
-      final day = DateUtils.dateOnly(date);
-      minutesByDay.update(day, (value) => value + (activity['duration_minutes'] as int),
-          ifAbsent: () => activity['duration_minutes'] as int);
-      if (DateUtils.isSameDay(today, day)) todayTests += activity['test_count'] as int;
-    }
-    final todayMinutes = minutesByDay[DateUtils.dateOnly(today)] ?? 0;
-    final pending = _activities.where((activity) => activity['sync_state'] != 'synced').length;
-    final guidance = todayMinutes > 0
-        ? 'مطالعه امروزت ثبت شده. اگر انرژی داری، یک مرور کوتاه کافی است.'
-        : 'از یک درس که می‌شناسی شروع کن. یک مرور کوتاه هم حساب می‌شود.';
+  void _openPersonal() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => ApexDemoScreen(onThemeChanged: widget.onThemeChanged),
+    ),
+  );
 
+  Widget _homePage() {
+    final now = DateTime.now();
+    final jalali = Jalali.fromDateTime(now);
+    final entries = <StudyEntry>[
+      for (final row in _activities)
+        if (DateTime.tryParse(row['created_at'] as String? ?? '')?.toLocal()
+            case final DateTime date)
+          (
+            day: date,
+            minutes: row['duration_minutes'] as int,
+            tests: row['test_count'] as int,
+          ),
+    ];
+    final momentum = StudyMomentum(entries, now);
+    final active = momentum.todayMinutes > 0 || momentum.todayTests > 0;
+    final pending = _activities
+        .where((activity) => activity['sync_state'] != 'synced')
+        .length;
+    final minutesByDay = <DateTime, int>{};
+    for (final entry in entries) {
+      minutesByDay.update(
+        DateUtils.dateOnly(entry.day),
+        (value) => value + entry.minutes,
+        ifAbsent: () => entry.minutes,
+      );
+    }
     return SafeArea(
       bottom: false,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
         children: [
-          Row(children: [
-            Expanded(child: Text('Apex360', style: theme.textTheme.headlineSmall)),
-            if (MobileAuthService.isLocalTest) const Chip(label: Text('حساب آزمایشی')),
-            IconButton(
-              tooltip: 'خروج از حساب',
-              onPressed: _loggingOut ? null : _logout,
-              icon: const Icon(Icons.logout_rounded),
-            ),
-          ]),
-          Container(
-            padding: const EdgeInsets.all(13),
-            decoration: BoxDecoration(
-              gradient: AppColors.apexGradient,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                AvaCompanion(celebrating: todayMinutes > 0),
-                const SizedBox(width: 12),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('آوا، همراه مطالعه‌ات', style: theme.textTheme.titleLarge?.copyWith(color: Colors.white)),
-                  Text(guidance, style: const TextStyle(color: Colors.white, height: 1.6)),
-                ])),
-              ]),
-              TextButton.icon(
-                style: TextButton.styleFrom(foregroundColor: const Color(0xFFAAEEE2)),
-                onPressed: () => showAva(context, guidance: guidance,
-                    onPlan: () => _goToTab(1), onReport: () => _goToTab(3)),
-                icon: const Icon(Icons.auto_awesome_rounded),
-                label: const Text('از آوا کمک بگیر'),
+          Row(
+            children: [
+              const Expanded(
+                child: ApexSection('مسیر مطالعه', detail: 'Apex360'),
               ),
-            ]),
+              if (MobileAuthService.isLocalTest)
+                const Chip(label: Text('حساب آزمایشی')),
+              IconButton(
+                tooltip: 'پیشرفت مطالعه',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => Scaffold(
+                      appBar: AppBar(title: const Text('پیشرفت مطالعه')),
+                      body: ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          StudyAchievements(momentum: momentum),
+                          ApexWeekChart(
+                            title: 'مطالعه در هفت روز گذشته',
+                            unit: 'دقیقه',
+                            days: List.generate(7, (index) {
+                              final day = DateTime(
+                                now.year,
+                                now.month,
+                                now.day - 6 + index,
+                              );
+                              return (
+                                label: Jalali.fromDateTime(day).day.toString(),
+                                value: minutesByDay[day] ?? 0,
+                              );
+                            }),
+                          ),
+                          ApexWeekChart(
+                            title: 'تمرین در هفت روز گذشته',
+                            unit: 'تست',
+                            days: List.generate(7, (index) {
+                              final day = DateTime(
+                                now.year,
+                                now.month,
+                                now.day - 6 + index,
+                              );
+                              final tests = entries
+                                  .where(
+                                    (row) => DateUtils.isSameDay(row.day, day),
+                                  )
+                                  .fold(0, (n, row) => n + row.tests);
+                              return (
+                                label: Jalali.fromDateTime(day).day.toString(),
+                                value: tests,
+                              );
+                            }),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.insights_rounded),
+              ),
+            ],
           ),
-          const SizedBox(height: 14),
-          Row(children: [
-            Expanded(child: Text('امروز', style: theme.textTheme.titleLarge)),
-            if (todayMinutes > 0)
-              const Chip(
-                avatar: Icon(Icons.eco_rounded, size: 17),
-                label: Text('یک قدم'),
-                backgroundColor: AppColors.mint,
+          Text(fa('${jalali.year}/${jalali.month}/${jalali.day}')),
+          const SizedBox(height: 8),
+          AvaHero(
+            title: active ? 'قدم امروز ثبت شد' : 'آماده‌ای شروع کنیم؟',
+            guidance: active
+                ? 'اگر انرژی داری، یک مرور کوتاه کافیه.'
+                : 'یک درس آشنا بردار و از یک مرور کوتاه شروع کن.',
+            celebrating: active,
+            onPlan: () => _goToTab(1),
+            onReport: () => _goToTab(3),
+          ),
+          MissionBoard(momentum: momentum),
+          if (pending > 0)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.cloud_upload_outlined),
+                title: Text('${fa(pending)} گزارش در صف ارسال'),
+                onTap: () => _goToTab(3),
               ),
-          ]),
+            ),
+          const ApexSection('ادامهٔ مسیر'),
           Card(
-            clipBehavior: Clip.antiAlias,
-            child: Column(children: [
-              ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: AppColors.sky,
-                  child: Icon(Icons.flag_outlined, color: AppColors.primary),
-                ),
-                title: Text(todayMinutes > 0 ? '$todayMinutes دقیقه مطالعه · $todayTests تست'
-                    : 'یک فعالیت کوتاه برای شروع'),
-                subtitle: Text(todayMinutes > 0 ? 'مطالعهٔ امروز روی گوشی ثبت شده است.'
-                    : 'از برنامه یک درس یا تمرین کوچک انتخاب کن.'),
-                onTap: () => _goToTab(1),
-              ),
-              if (pending > 0)
-                ListTile(
-                  leading: const Icon(Icons.cloud_upload_outlined),
-                  title: Text('$pending گزارش در صف ارسال'),
-                  trailing: const Icon(Icons.chevron_left_rounded),
-                  onTap: () => _goToTab(3),
-                ),
-            ]),
-          ),
-          const SizedBox(height: 10),
-          Wrap(spacing: 8, runSpacing: 6, children: [
-            FilledButton.icon(
-              onPressed: () => _goToTab(3),
-              icon: const Icon(Icons.edit_note_rounded),
-              label: const Text('ثبت مطالعه'),
+            child: ListTile(
+              leading: const Icon(Icons.event_available_rounded),
+              title: const Text('برنامه مشاور'),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: () => _goToTab(1),
             ),
-            OutlinedButton.icon(
-              onPressed: () => _goToTab(1),
-              icon: const Icon(Icons.event_available_outlined),
-              label: const Text('برنامه مشاور'),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.spa_outlined),
+              title: const Text('حال خوب من'),
+              onTap: _openWellbeing,
             ),
-          ]),
-          const SizedBox(height: 14),
-          ApexWeekChart(
-            title: 'مطالعه در هفت روز گذشته',
-            unit: 'دقیقه',
-            days: List.generate(7, (index) {
-              final day = DateTime(today.year, today.month, today.day - (6 - index));
-              return (label: Jalali.fromDateTime(day).day.toString(), value: minutesByDay[day] ?? 0);
-            }),
           ),
-          const SizedBox(height: 6),
-          ListTile(
-            leading: const Icon(Icons.spa_outlined),
-            title: const Text('حال خوب من'),
-            onTap: _openWellbeing,
-          ),
-          ListTile(
-            leading: const Icon(Icons.phone_android_rounded),
-            title: const Text('باز کردن داشبورد آفلاین'),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => const ApexDemoScreen(),
-            )),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.phone_android_rounded),
+              title: const Text('باز کردن داشبورد آفلاین'),
+              onTap: _openPersonal,
+            ),
           ),
         ],
       ),
