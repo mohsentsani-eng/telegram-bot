@@ -24,6 +24,7 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _error;
 
   Future<void> _login() async {
+    if (_busy) return;
     if (_local && _code.text.trim().isEmpty) {
       setState(() => _error = 'کد ورود آزمایشی را وارد کن.');
       return;

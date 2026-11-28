@@ -14,11 +14,6 @@ on:
       - 'tests/test_mobile_auth.py'
       - '.github/workflows/mobile-apk.yml'
   workflow_dispatch:
-    inputs:
-      api_origin:
-        description: 'Approved HTTPS test API origin. Leave empty for the loopback conference build.'
-        type: string
-        required: false
 
 permissions:
   contents: read
@@ -45,7 +40,7 @@ jobs:
         working-directory: mobile_app
         run: flutter create --platforms=android --project-name=taranom_hamdeli --org=ir.taranomhamdeli .
       - name: Allow the loopback API in demo builds
-        if: inputs.api_origin == ''
+        if: vars.APEX360_TEST_API_ORIGIN == ''
         working-directory: mobile_app
         run: python3 ../tools/configure_mobile_debug.py
       - name: Remove generated example test
@@ -79,7 +74,7 @@ jobs:
       - name: Build installable APK
         working-directory: mobile_app
         env:
-          APEX_API_ORIGIN: ${{ inputs.api_origin }}
+          APEX_API_ORIGIN: ${{ vars.APEX360_TEST_API_ORIGIN }}
         run: |
           if [ -z "$APEX_API_ORIGIN" ]; then
             flutter build apk --debug --dart-define=APEX_LOCAL_TEST=true
@@ -114,7 +109,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: apex360-android-${{ inputs.api_origin != '' && 'https-test' || 'conference-demo' }}
+          name: apex360-android-${{ vars.APEX360_TEST_API_ORIGIN != '' && 'https-test' || 'conference-demo' }}
           path: mobile_app/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 14
